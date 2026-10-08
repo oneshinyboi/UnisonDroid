@@ -1,5 +1,6 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.generateEd25519OpenSshKeyPem
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import net.schmizz.sshj.common.Buffer
@@ -26,8 +27,6 @@ import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.PublicKey
-import java.security.interfaces.EdECPrivateKey
-import java.security.interfaces.EdECPublicKey
 import java.security.interfaces.RSAPublicKey
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
@@ -48,7 +47,7 @@ class SshTunnelTest {
 
     @BeforeEach
     fun setUp() {
-        val (pem, publicBlob) = generateEd25519KeyPem()
+        val (pem, publicBlob) = generateEd25519OpenSshKeyPem("unisondroid-test")
         userKeyPem = pem
         userPublicBlob = publicBlob
         echoSocket = startEchoServer()
@@ -185,49 +184,6 @@ class SshTunnelTest {
         return server
     }
 
-    private fun generateEd25519KeyPem(): Pair<String, ByteArray> {
-        val keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
-        val pub = keyPair.public as EdECPublicKey
-        val seed = (keyPair.private as EdECPrivateKey).bytes.orElseThrow()
-
-        val pubBytes = ByteArray(32)
-        val yBytes = pub.point.y.toByteArray()
-        for (index in yBytes.indices) {
-            if (index < 32) pubBytes[index] = yBytes[yBytes.size - 1 - index]
-        }
-        if (pub.point.isXOdd) {
-            pubBytes[31] = (pubBytes[31].toInt() or 0x80).toByte()
-        }
-
-        val publicBlob = Buffer.PlainBuffer()
-            .putString("ssh-ed25519")
-            .putString(pubBytes)
-            .compactData
-
-        val privateKeyBody = Buffer.PlainBuffer()
-            .putUInt32(CHECK_INT)
-            .putUInt32(CHECK_INT)
-            .putString("ssh-ed25519")
-            .putString(pubBytes)
-            .putString(seed + pubBytes)
-            .putString("unisondroid-test")
-            .compactData
-        val padding = ByteArray((8 - privateKeyBody.size % 8) % 8) { (it + 1).toByte() }
-
-        val container = Buffer.PlainBuffer()
-            .putRawBytes("openssh-key-v1\u0000".toByteArray(Charsets.ISO_8859_1))
-            .putString("none")
-            .putString("none")
-            .putString("")
-            .putUInt32(1)
-            .putString(publicBlob)
-            .putString(privateKeyBody + padding)
-            .compactData
-        val base64 = Base64.getMimeEncoder(70, byteArrayOf('\n'.code.toByte())).encodeToString(container)
-        val pem = "-----BEGIN OPENSSH PRIVATE KEY-----\n$base64\n-----END OPENSSH PRIVATE KEY-----\n"
-        return pem to publicBlob
-    }
-
     private fun rsaFingerprint(public: RSAPublicKey): String {
         val blob = Buffer.PlainBuffer()
             .putString("ssh-rsa")
@@ -245,7 +201,6 @@ class SshTunnelTest {
 
     private companion object {
         const val LOOPBACK = "127.0.0.1"
-        const val CHECK_INT = 1_234_567_890L
         val FINGERPRINT_REGEX = Regex("SHA256:[A-Za-z0-9+/]{43}")
     }
 }

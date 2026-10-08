@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.sshj)
+    implementation(libs.bcprov)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
