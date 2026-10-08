@@ -169,6 +169,27 @@ class OutputParserTest {
     }
 
     @Test
+    fun `loose mismatch substrings in paths do not outrank specific matchers`() {
+        val (_, progressEvents) = feedAll("[wnt] ...  1/2 KiB  docs/incompatible.md\n")
+        assertEquals(
+            listOf(SyncEvent.Progress(0.5f, "docs/incompatible.md")),
+            progressEvents,
+        )
+
+        val (_, conflictEvents) = feedAll("[CONFLICT] design/different versions.txt\n")
+        assertEquals(
+            listOf(SyncEvent.Conflict("design/different versions.txt")),
+            conflictEvents,
+        )
+
+        val (_, bannerEvents) = feedAll(
+            "Error: Client and server are incompatible. Setting up feature \"xattrs\" failed with error \"boom\"\n",
+        )
+        assertEquals(1, bannerEvents.size)
+        assertTrue(bannerEvents[0] is SyncEvent.VersionMismatch)
+    }
+
+    @Test
     fun `nonzero exit without Completed finalizes counts and appends nothing extra`() {
         val parser = OutputParser()
 

@@ -72,7 +72,7 @@ class OutputParser {
         if (line.isEmpty()) return emptyList()
         val progress = PROGRESS.find(line)
         val event: SyncEvent = when {
-            isVersionMismatch(line) -> SyncEvent.VersionMismatch(line)
+            isKnownUnisonMismatch(line) -> SyncEvent.VersionMismatch(line)
 
             line.startsWith(SUMMARY_PREFIX) -> {
                 countTransferred(line)
@@ -115,6 +115,9 @@ class OutputParser {
 
             line.contains("conflict", ignoreCase = true) -> SyncEvent.Conflict(path = line)
 
+            line.contains("different versions", ignoreCase = true) ||
+                line.contains("incompatible", ignoreCase = true) -> SyncEvent.VersionMismatch(line)
+
             else -> return emptyList()
         }
         return listOf(event).also {
@@ -126,10 +129,8 @@ class OutputParser {
         }
     }
 
-    private fun isVersionMismatch(line: String): Boolean =
-        REAL_MISMATCH_MARKERS.any { line.contains(it) } ||
-            line.contains("different versions", ignoreCase = true) ||
-            line.contains("incompatible", ignoreCase = true)
+    private fun isKnownUnisonMismatch(line: String): Boolean =
+        REAL_MISMATCH_MARKERS.any { line.contains(it) }
 
     private fun countTransferred(line: String) {
         val fromItems = ITEMS_TRANSFERRED.find(line)?.groupValues?.get(1)?.toInt()
