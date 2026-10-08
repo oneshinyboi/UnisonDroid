@@ -1,0 +1,8 @@
+Error: Received unexpected header from the server:
+   expected "Unison RPC\n" but received "ssh: Could not resolve hostname server.example: Name or service not known\r\n", 
+which differs at "U".
+This can happen because you have different versions of Unison
+installed on the client and server machines, or because
+your connection is failing and somebody is printing an error
+message, or because your remote login shell is printing
+something itself before starting Unison.

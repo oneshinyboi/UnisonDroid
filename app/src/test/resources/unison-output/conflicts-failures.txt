@@ -1,0 +1,7 @@
+[CONFLICT] notes/plan.txt
+[CONFLICT] photos/shared.bin
+conflict: music/playlist.m3u
+[FAILED] docs/report.pdf
+[FAILED] photos/raw/img.cr2: Input/output error
+Error: Input/output error [read()/write()]
+Synchronization complete ... 2 files ... 64 KiB transferred

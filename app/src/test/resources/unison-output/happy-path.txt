@@ -1,0 +1,8 @@
+[wnd] connected [ssh://server.example//srv/sync]
+Looking for changes
+[wnt] ...  0/345 KiB  photos/vacation.jpg[wnt] ...  12/345 KiB  photos/vacation.jpg[wnt] ...  345/345 KiB  photos/vacation.jpg
+[wnt] ...  18/18 KiB  notes/todo.txt
+[wnt] ...  0/1024 KiB  video/clip.mp4[wnt] ...  512/1024 KiB  video/clip.mp4[wnt] ...  1024/1024 KiB  video/clip.mp4
+[wnt] ...  2/2 KiB  config/settings.json
+Saving synchronizer state
+Synchronization complete ... 4 files ... 1389 KiB transferred
