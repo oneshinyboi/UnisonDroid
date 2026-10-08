@@ -1,3 +1,16 @@
+# Gradle
+.gradle/
+build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.kotlin/
+
+# Local configuration (SDK path, etc.)
+local.properties
+
 # Worktrees & superpowers scratch
 .worktrees/
 .superpowers/
