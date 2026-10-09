@@ -14,3 +14,10 @@ local.properties
 # Worktrees & superpowers scratch
 .worktrees/
 .superpowers/
+
+# Native build outputs and scratch
+native/out/
+native/.build/
+
+# Cross-compiled native libraries bundled into the APK
+app/src/main/jniLibs/
