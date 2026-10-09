@@ -7,14 +7,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import io.unisondroid.app.service.SyncService
 
 object Routes {
     const val PROFILES = "profiles"
@@ -32,16 +30,11 @@ object Routes {
 
 @Composable
 fun UnisonDroidNavHost(navController: NavHostController = rememberNavController()) {
-    val context = LocalContext.current
-
     NavHost(navController = navController, startDestination = Routes.PROFILES) {
         composable(Routes.PROFILES) {
             ProfilesScreen(
                 onOpenProfile = { id -> navController.navigate(Routes.editor(id)) },
-                onStartSync = { id ->
-                    context.startService(SyncService.intent(context, id))
-                    navController.navigate(Routes.run(id))
-                },
+                onStartSync = { id -> navController.navigate(Routes.run(id)) },
             )
         }
         composable(
@@ -64,10 +57,7 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
             route = Routes.RUN,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { entry ->
-            PlaceholderScreen(
-                title = "Sync",
-                subtitle = entry.arguments?.getString("id"),
-            )
+            RunScreen(profileId = entry.arguments?.getString("id").orEmpty())
         }
         composable(Routes.KEYS) { PlaceholderScreen(title = "SSH keys") }
         composable(Routes.ABOUT) { PlaceholderScreen(title = "About") }
