@@ -139,20 +139,25 @@ class SshjTunnel : SshTunnel {
         return thread(name = "ssh-exec-relay-${serverChannel.socket().localPort}", isDaemon = true) {
             try {
                 serverChannel.accept().socket().use { local ->
+                    // Drain the remote stderr so the channel's window can't fill
+                    // and block the remote `unison -server`.
+                    val err = thread(name = "ssh-exec-relay-err", isDaemon = true) {
+                        runCatching { command.errorStream?.copyTo(System.err) }
+                    }
                     val up = thread(name = "ssh-exec-relay-up", isDaemon = true) {
-                        runCatching { local.getInputStream().copyTo(command.outputStream) }
-                        runCatching { command.outputStream.flush() }
-                        // Propagate the client's end-of-stream to `unison -server`.
+                        // Flush after every write: sshj buffers the channel
+                        // output, and unison waits for the server's reply before
+                        // sending more, so a deferred flush would deadlock.
+                        runCatching { pump(local.getInputStream(), command.outputStream) }
                         runCatching { command.outputStream.close() }
                     }
                     val down = thread(name = "ssh-exec-relay-down", isDaemon = true) {
-                        runCatching { command.inputStream.copyTo(local.getOutputStream()) }
-                        runCatching { local.getOutputStream().flush() }
-                        // Remote end-of-stream: close the local connection.
+                        runCatching { pump(command.inputStream, local.getOutputStream()) }
                         runCatching { local.close() }
                     }
                     up.join(RELAY_JOIN_MS)
                     down.join(RELAY_JOIN_MS)
+                    err.join(RELAY_JOIN_MS)
                 }
             } catch (_: IOException) {
             } finally {
@@ -164,10 +169,21 @@ class SshjTunnel : SshTunnel {
         }
     }
 
+    private fun pump(input: java.io.InputStream, output: java.io.OutputStream) {
+        val buffer = ByteArray(RELAY_BUFFER)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            output.write(buffer, 0, n)
+            output.flush()
+        }
+    }
+
     private companion object {
         const val LOOPBACK = "127.0.0.1"
         const val BACKLOG = 50
         const val RELAY_JOIN_MS = 5_000L
         const val CLOSE_JOIN_MS = 3_000L
+        const val RELAY_BUFFER = 32 * 1024
     }
 }

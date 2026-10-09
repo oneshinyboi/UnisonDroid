@@ -216,6 +216,32 @@ class SshTunnelTest {
         }
     }
 
+    @Test
+    fun `ssh-exec relay round-trips without waiting for client EOF`() = runTest {
+        val script = writeFakeServerScript()
+        val handle = SshjTunnel().open(execSpec(script.absolutePath), HostKeyDecision { true })
+
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(InetAddress.getByName(LOOPBACK), handle.localPort), 10_000)
+                socket.soTimeout = 10_000
+                val out = socket.getOutputStream()
+                val input = DataInputStream(socket.getInputStream())
+                repeat(3) { i ->
+                    val message = "ping-$i".toByteArray()
+                    out.write(message)
+                    out.flush()
+                    val echoed = ByteArray(message.size)
+                    input.readFully(echoed)
+                    assertArrayEquals(message, echoed)
+                }
+            }
+        } finally {
+            handle.close()
+            handle.awaitClosed()
+        }
+    }
+
     private fun writeFakeServerScript(): File {
         val script = createTempDirectory("unisondroid-relay").resolve("fake-unison").toFile()
         // Stands in for `unison -server`: echoes the byte stream on stdin.
