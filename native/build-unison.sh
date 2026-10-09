@@ -33,6 +33,7 @@ UNISON_REPO=https://github.com/bcpierce00/unison.git
 
 # --- Paths ------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NATIVE_DIR="$SCRIPT_DIR"
 OUT_DIR="$NATIVE_DIR/out"
 WORK_DIR="${UNISON_BUILD_DIR:-$NATIVE_DIR/.build}"
@@ -63,12 +64,20 @@ CROSS_OCAML_PREFIX="$WORK_DIR/ocaml-$TRIPLE"
 MIXED_BIN="$WORK_DIR/mixed-$TRIPLE/bin"
 UNISON_SRC="$WORK_DIR/unison-$ABI"
 OUT_BIN="$OUT_DIR/$ABI/libunison.so"
+JNI_BIN="$REPO_ROOT/app/src/main/jniLibs/$ABI/libunison.so"
+
+install_to_jni() {
+  mkdir -p "$(dirname "$JNI_BIN")"
+  cp "$OUT_BIN" "$JNI_BIN"
+  log "installed $JNI_BIN"
+}
 
 [ -x "$CC" ] || die "NDK $NDK_VERSION not found (looked for $CC); set ANDROID_SDK_ROOT"
 [ -f "$TOOLCHAIN_BIN/ld.lld" ] || die "NDK toolchain incomplete: $TOOLCHAIN_BIN"
 
 if [ -f "$OUT_BIN" ] && [ "${FORCE:-0}" != "1" ]; then
   log "already built: $OUT_BIN (set FORCE=1 to rebuild)"
+  install_to_jni
   exit 0
 fi
 
@@ -124,8 +133,12 @@ build_cross_ocaml() {
       --disable-instrumented-runtime > "$WORK_DIR/cross-configure-$TRIPLE.log" 2>&1
 
     # coldstart must run the freshly built stdlib with the build machine's
-    # interpreter, not the Android ocamlrun it just produced.
-    sed -i "s|OCAMLRUN='\$\$(ROOTDIR)/runtime/ocamlrun\$(EXE)'|OCAMLRUN='\$(OCAMLRUN)'|" Makefile
+    # interpreter, not the Android ocamlrun it just produced. Match only the
+    # value (single-quoted so make's $() is taken literally); fail loudly if the
+    # Makefile layout ever changes.
+    sed -i 's|\$\$(ROOTDIR)/runtime/ocamlrun\$(EXE)|$(OCAMLRUN)|' Makefile
+    grep -Fq "OCAMLRUN='\$(OCAMLRUN)'" Makefile \
+      || die "coldstart patch did not apply to $src/Makefile (OCaml Makefile layout changed?)"
 
     local overrides=(
       OCAMLRUN="$HOST_OCAML_PREFIX/bin/ocamlrun"
@@ -172,12 +185,11 @@ build_unison() {
   cp "$UNISON_SRC/src/unison" "$OUT_BIN"
   "$STRIP" "$OUT_BIN"
   log "wrote $OUT_BIN ($(du -h "$OUT_BIN" | cut -f1))"
-  "$STRIP" --version >/dev/null 2>&1 || true
+  install_to_jni
 }
 
 build_host_ocaml
 build_cross_ocaml
 build_unison
 
-log "done. Copy into the app with:"
-log "  mkdir -p app/src/main/jniLibs/$ABI && cp native/out/$ABI/libunison.so app/src/main/jniLibs/$ABI/"
+log "done."

@@ -50,8 +50,16 @@ NDK `29.0.14206865`, `ANDROID_API=26` (matches the app's `minSdk`).
 ## Copying the libraries into the app
 
 Gradle only packages native libraries found under `app/src/main/jniLibs/<abi>/`.
-That directory is gitignored; copy the build outputs there before building the
-app:
+`build-unison.sh` writes its result there automatically (and re-copies it on
+subsequent no-op runs), so no manual step is required:
+
+```sh
+native/build-unison.sh arm64-v8a   # -> app/src/main/jniLibs/arm64-v8a/libunison.so
+native/build-unison.sh x86_64      # -> app/src/main/jniLibs/x86_64/libunison.so
+```
+
+The directory is gitignored; to copy from an already-built `native/out/` by
+hand:
 
 ```sh
 for abi in arm64-v8a x86_64; do
