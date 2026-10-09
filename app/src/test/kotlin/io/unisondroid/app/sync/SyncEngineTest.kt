@@ -163,18 +163,21 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `second request while a sync is running reports Busy`() = runTest {
+    fun `second request while a sync is running returns false and state remains Syncing`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
         )
         val job = launch { h.engine.requestSync("prof1") }
         awaitState(h.engine) { it is SyncState.Syncing }
+        val syncing = h.engine.state.value
 
-        withTimeout(10_000) { h.engine.requestSync("prof2") }
+        val proceeded = withTimeout(10_000) { h.engine.requestSync("prof2") }
 
-        assertEquals(SyncState.Busy, h.engine.state.value)
-        assertEquals(1, h.runner.starts.size, "Busy request must not start another run")
+        assertFalse(proceeded)
+        assertTrue(syncing is SyncState.Syncing)
+        assertEquals(syncing, h.engine.state.value, "rejected request must not touch state")
+        assertEquals(1, h.runner.starts.size, "rejected request must not start another run")
 
         gate.complete(Unit)
         withTimeout(10_000) { job.join() }

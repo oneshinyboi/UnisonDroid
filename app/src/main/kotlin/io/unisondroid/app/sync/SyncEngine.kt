@@ -34,7 +34,6 @@ sealed interface SyncState {
     data class Syncing(val profileId: String, val log: List<String>, val progress: Float) : SyncState
     data class Finished(val profileId: String, val summary: SyncSummary) : SyncState
     data class Failed(val profileId: String, val reason: Reason, val detail: String) : SyncState
-    data object Busy : SyncState
 
     enum class Reason {
         BINARY_MISSING,
@@ -70,7 +69,7 @@ class SyncEngine(
     @Volatile
     private var activeJob: Job? = null
 
-    suspend fun requestSync(profileId: String) {
+    suspend fun requestSync(profileId: String): Boolean {
         val binary = when (val status = binaryLocator.locate()) {
             is BinaryStatus.Missing -> {
                 _state.value = SyncState.Failed(
@@ -78,19 +77,17 @@ class SyncEngine(
                     reason = SyncState.Reason.BINARY_MISSING,
                     detail = "libunison.so not found in the native library directory",
                 )
-                return
+                return true
             }
             is BinaryStatus.Available -> status.path
         }
-        if (!syncMutex.tryLock()) {
-            _state.value = SyncState.Busy
-            return
-        }
+        if (!syncMutex.tryLock()) return false
         try {
             runSync(profileId, binary)
         } finally {
             syncMutex.unlock()
         }
+        return true
     }
 
     suspend fun respondHostKey(approve: Boolean) {
