@@ -19,9 +19,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.io.BufferedReader
 import java.io.DataInputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -242,10 +244,42 @@ class SshTunnelTest {
         }
     }
 
+    @Test
+    fun `ssh-exec relay survives transfers longer than fifteen seconds`() = runTest {
+        val script = writeSlowStreamScript()
+        val handle = SshjTunnel().open(execSpec(script.absolutePath), HostKeyDecision { true })
+
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(InetAddress.getByName(LOOPBACK), handle.localPort), 10_000)
+                socket.soTimeout = 40_000
+                val ticks = mutableListOf<String>()
+                BufferedReader(InputStreamReader(socket.getInputStream())).use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        ticks.add(line)
+                        if (line == "tick ${TICKS - 1}") break
+                    }
+                }
+                assertEquals((0 until TICKS).map { "tick $it" }, ticks)
+            }
+        } finally {
+            handle.close()
+            handle.awaitClosed()
+        }
+    }
+
     private fun writeFakeServerScript(): File {
         val script = createTempDirectory("unisondroid-relay").resolve("fake-unison").toFile()
         // Stands in for `unison -server`: echoes the byte stream on stdin.
         script.writeText("#!/bin/sh\nexec cat\n")
+        script.setExecutable(true)
+        return script
+    }
+
+    private fun writeSlowStreamScript(): File {
+        val script = createTempDirectory("unisondroid-relay").resolve("slow-unison").toFile()
+        script.writeText("#!/bin/sh\ni=0\nwhile [ \$i -lt $TICKS ]; do echo \"tick \$i\"; sleep 1; i=\$((i+1)); done\n")
         script.setExecutable(true)
         return script
     }
@@ -315,6 +349,7 @@ class SshTunnelTest {
 
     private companion object {
         const val LOOPBACK = "127.0.0.1"
+        const val TICKS = 20
         val FINGERPRINT_REGEX = Regex("SHA256:[A-Za-z0-9+/]{43}")
     }
 }

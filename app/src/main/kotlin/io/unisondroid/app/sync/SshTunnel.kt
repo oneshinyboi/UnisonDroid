@@ -155,9 +155,9 @@ class SshjTunnel : SshTunnel {
                         runCatching { pump(command.inputStream, accepted.getOutputStream()) }
                         runCatching { accepted.close() }
                     }
-                    up.join(RELAY_JOIN_MS)
-                    down.join(RELAY_JOIN_MS)
-                    err.join(RELAY_JOIN_MS)
+                    up.join()
+                    down.join()
+                    err.join()
                 }
             } catch (_: IOException) {
             } finally {
@@ -189,7 +189,6 @@ class SshjTunnel : SshTunnel {
     private companion object {
         const val LOOPBACK = "127.0.0.1"
         const val BACKLOG = 50
-        const val RELAY_JOIN_MS = 5_000L
         const val CLOSE_JOIN_MS = 3_000L
         const val RELAY_BUFFER = 32 * 1024
     }
