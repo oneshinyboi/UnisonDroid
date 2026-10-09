@@ -1,0 +1,8 @@
+Restore Unison's archive locking.
+
+- The bundled Unison now uses an O_EXCL archive lock instead of disabling
+  locking (previously forced by Android's SELinux policy). If another client is
+  already syncing the same server roots, UnisonDroid now stops instead of
+  risking archive corruption.
+- Stale lock files left by an interrupted sync are cleared automatically.
+- Fix a flaky SSH tunnel teardown test.
