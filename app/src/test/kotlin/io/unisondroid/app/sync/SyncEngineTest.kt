@@ -41,6 +41,27 @@ class SyncEngineTest {
     lateinit var nativeDir: File
 
     @Test
+    fun `stale local lock files are cleared before unison runs`() = runTest {
+        val staleLock = File(unisonDir, "lk" + "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6")
+        val archive = File(unisonDir, "ar" + "0".repeat(32))
+        staleLock.writeText("stale")
+        archive.writeText("archive")
+        var lockPresentAtRunnerStart = true
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            onStart = { _, _ -> lockPresentAtRunnerStart = staleLock.exists() },
+        )
+
+        val job = launch { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { job.join() }
+
+        assertTrue(h.engine.state.value is SyncState.Finished)
+        assertFalse(staleLock.exists(), "stale lk* lock must be cleared")
+        assertTrue(archive.exists(), "non-lock files must be preserved")
+        assertFalse(lockPresentAtRunnerStart, "lock must be gone before unison starts")
+    }
+
+    @Test
     fun `happy path connects writes prf runs unison and finishes in order`() = runTest {
         val tunnelPark = CompletableDeferred<Unit>()
         val lineGate = CompletableDeferred<Unit>()

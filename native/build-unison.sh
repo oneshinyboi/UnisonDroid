@@ -173,6 +173,22 @@ build_unison() {
   rm -rf "$UNISON_SRC"
   git clone --depth 1 --branch "$UNISON_VERSION" "$UNISON_REPO" "$UNISON_SRC" \
     > "$WORK_DIR/unison-clone-$ABI.log" 2>&1
+
+  # Android's SELinux policy denies link(2) for untrusted_app on app_data_file.
+  # Unison's archive lock (src/lock.ml, Lock.acquire) deliberately uses a
+  # hard-link on Unix to be NFS-safe, so on-device it always fails and is
+  # misread as "archive already locked". Android is not NFS; the O_EXCL branch
+  # is safe here, so swap the two branch bodies to force O_EXCL for the target
+  # build. The server build is untouched and keeps hard-link locking.
+  # Fail loudly if the lock.ml layout ever changes.
+  sed -i \
+    -e 's|rename (unique name (Unix.getpid ()) 0o600) name|__UNISONLOCK_OEXCL__|' \
+    -e 's|create name 0o600|rename (unique name (Unix.getpid ()) 0o600) name|' \
+    -e 's|__UNISONLOCK_OEXCL__|create name 0o600|' \
+    "$UNISON_SRC/src/lock.ml"
+  grep -A3 'match Sys.unix with' "$UNISON_SRC/src/lock.ml" | grep -Fq "create name 0o600" \
+    || die "lock.ml O_EXCL patch did not apply (Unison lock.ml layout changed?)"
+
   (
     cd "$UNISON_SRC"
     export PATH="$MIXED_BIN:/usr/bin:/bin"

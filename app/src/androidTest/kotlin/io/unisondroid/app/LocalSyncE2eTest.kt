@@ -60,9 +60,9 @@ class LocalSyncE2eTest {
         val rootB = File(base, "b").apply { mkdirs() }
         val profileDir = File(base, "unison").apply { mkdirs() }
         val generated = writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
-        assertTrue(
-            "production profile must disable unison's hard-link archive lock, got:\n$generated",
-            generated.contains("ignorelocks = true"),
+        assertFalse(
+            "production profile must NOT disable unison's archive lock, got:\n$generated",
+            generated.contains("ignorelocks"),
         )
 
         File(rootA, "hello.txt").writeText("hello world")
@@ -138,6 +138,44 @@ class LocalSyncE2eTest {
         assertTrue(
             "an mtime-only change must transfer nothing, got:\n${second.output}",
             second.output.contains("Nothing to do"),
+        )
+    }
+
+    @Test
+    fun archiveLockIsHonored_andStaleLockBlocksThenClears() {
+        val binary = locateBinary()
+        val base = newBaseDir()
+        val rootA = File(base, "a").apply { mkdirs() }
+        val rootB = File(base, "b").apply { mkdirs() }
+        val profileDir = File(base, "unison").apply { mkdirs() }
+        writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
+        File(rootA, "f.txt").writeText("x")
+
+        val first = runUnison(binary, profileDir)
+        assertEquals("initial sync failed:\n${first.output}", 0, first.exit)
+
+        val archive = profileDir
+            .listFiles { f -> f.isFile && f.name.startsWith("ar") && f.name.length == 34 }
+            ?.firstOrNull()
+            ?: error("expected an archive file ar<hash> in $profileDir, found: ${profileDir.list()?.toList()}")
+
+        // A lock file left behind by a killed sync must block unison. This only
+        // passes if the bundled binary honors O_EXCL archive locks on Android.
+        val staleLock = File(profileDir, "lk" + archive.name.removePrefix("ar"))
+        staleLock.writeText("stale")
+        val blocked = runUnison(binary, profileDir)
+        assertTrue(
+            "an existing lock must stop unison, got exit=${blocked.exit}:\n${blocked.output}",
+            blocked.exit != 0 && blocked.output.contains("should be deleted"),
+        )
+
+        // Clearing the stale lock (as the app does before each run) unblocks it.
+        assertTrue("stale lock should be deletable", staleLock.delete())
+        val after = runUnison(binary, profileDir)
+        assertEquals(
+            "sync must succeed once the stale lock is cleared:\n${after.output}",
+            0,
+            after.exit,
         )
     }
 

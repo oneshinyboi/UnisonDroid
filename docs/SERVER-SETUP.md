@@ -106,13 +106,18 @@ In UnisonDroid, create a profile with the server host, user, SSH port, the
 remote root directory you want to sync, and the socket port from step 3. The
 first sync will ask you to approve the server's SSH host key fingerprint.
 
-## Limitations
+## Locking
 
-UnisonDroid v1 disables Unison's archive locks (`ignorelocks = true`) on both
-replicas. Android's SELinux policy denies `link(2)` on app data, and Unison's
-lock is implemented with a hard link, so the lock cannot be taken on-device at
-all. The app serializes its own syncs, but it **cannot** detect or prevent
-another client (a desktop `unison` process, or another UnisonDroid profile)
-from syncing the same server roots concurrently. Running more than one client
-against the same roots at the same time can corrupt the archives; do not do it
-in v1.
+Android's SELinux policy denies `link(2)` on app data, and Unison's default
+Unix archive lock is implemented with a hard link. The bundled binary is
+therefore built using Unison's `O_EXCL` lock branch instead (safe here —
+Android storage is not NFS), so archive locks work normally: if another Unison
+client is already syncing the same server roots, UnisonDroid stops rather than
+risk corrupting the archives, and the server side keeps its usual hard-link
+lock.
+
+The tradeoff of an `O_EXCL` lock is that a sync killed mid-run can leave the
+lock file behind, and the next run refuses until it is removed. UnisonDroid
+clears stale lock files from its own private archive directory before each run,
+so this is handled automatically.
+

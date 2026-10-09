@@ -99,8 +99,19 @@ open class SyncEngine(
         activeJob?.cancel()
     }
 
+    // The bundled unison locks each archive via an O_EXCL file named
+    // "lk<32-hex-archive-hash>" in the UNISON dir (see src/update.ml archiveName
+    // / src/lock.ml). A sync killed mid-run leaves that file behind, and unison
+    // then refuses the next run until it is removed. This dir is app-private and
+    // syncs are serialized (mutex held here), so any such file is stale.
+    private fun clearStaleLocks() {
+        if (!unisonDir.isDirectory) return
+        unisonDir.listFiles { f -> f.isFile && STALE_LOCK.matches(f.name) }?.forEach { it.delete() }
+    }
+
     private suspend fun runSync(profileId: String, binary: File) {
         activeJob = currentCoroutineContext()[Job]
+        clearStaleLocks()
         var profile: Profile? = null
         var process: RunningProcess? = null
         var handle: TunnelHandle? = null
@@ -295,5 +306,6 @@ open class SyncEngine(
         const val EXIT_UNKNOWN = -1
         const val LINE_FEED = "\n"
         const val PERMISSION_DENIED_MARKER = "Permission denied"
+        val STALE_LOCK = Regex("lk[0-9a-f]{32}")
     }
 }

@@ -11,18 +11,13 @@ object PrfGenerator {
         sb.append("perms = 0\n")
         sb.append("links = false\n")
         sb.append("fat = true\n")
-        // Unison locks archives by hard-linking a pid-suffixed temp file into
-        // place (src/lock.ml) and treats link(2) failure as "already locked".
-        // Android's SELinux policy denies { link } for untrusted_app on
-        // app_data_file (confirmed via avc audit), and every app-writable path
-        // is either app_data_file or FUSE-backed external storage (no hard
-        // links), so the lock can never be acquired. ignorelocks disables
-        // archive locking on BOTH replicas. The app serializes its own syncs
-        // (SyncEngine.syncMutex + foreground service) but cannot stop another
-        // client (desktop unison, another profile) from syncing the same server
-        // roots at the same time; concurrent cross-client sync to the same
-        // roots is unsupported in v1.
-        sb.append("ignorelocks = true\n")
+        // Unison locks each archive so two clients can't corrupt it. Its Unix
+        // lock uses a hard link (src/lock.ml), which Android's SELinux policy
+        // denies for untrusted_app on app_data_file. native/build-unison.sh
+        // patches the bundled binary to use its O_EXCL lock branch instead
+        // (safe here: Android storage is not NFS), so real locking is restored.
+        // The app additionally serializes its own syncs (SyncEngine.syncMutex +
+        // foreground service) and clears stale lock files before each run.
         for (pattern in profile.ignorePatterns) {
             sb.append("ignore = Path ").append(pattern).append('\n')
         }
