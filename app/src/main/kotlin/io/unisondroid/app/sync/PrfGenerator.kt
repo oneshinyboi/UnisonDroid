@@ -7,7 +7,10 @@ object PrfGenerator {
     fun generate(profile: Profile, localSocketPort: Int): String {
         val sb = StringBuilder()
         sb.append("root = ").append(profile.localRoot).append('\n')
-        sb.append("root = socket://127.0.0.1:").append(localSocketPort).append('\n')
+        // Remote root on the server, as part of the socket root
+        // (socket://host:port/path; an absolute path yields a double slash).
+        sb.append("root = socket://127.0.0.1:").append(localSocketPort)
+            .append('/').append(profile.remoteRoot).append('\n')
         sb.append("perms = 0\n")
         sb.append("links = false\n")
         sb.append("fat = true\n")

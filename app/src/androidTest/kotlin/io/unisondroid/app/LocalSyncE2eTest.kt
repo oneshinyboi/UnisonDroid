@@ -205,11 +205,14 @@ class LocalSyncE2eTest {
             sshKeyId = "e2e",
         )
         val generated = PrfGenerator.generate(profile, localSocketPort = SOCKET_PORT)
+        // Replace the whole socket root line (which now carries the remote
+        // root path) with the second local root, to test a local-local sync.
         val localLocal = generated.replace(
-            "root = socket://127.0.0.1:$SOCKET_PORT",
+            Regex("""root = socket://127\.0\.0\.1:$SOCKET_PORT/\S*"""),
             "root = ${rootB.absolutePath}",
         )
         check(localLocal != generated) { "PrfGenerator no longer emits the expected socket root" }
+        check(!localLocal.contains("socket://")) { "socket root must have been replaced, got:\n$localLocal" }
         File(profileDir, "$name.prf").writeText(localLocal)
         return localLocal
     }

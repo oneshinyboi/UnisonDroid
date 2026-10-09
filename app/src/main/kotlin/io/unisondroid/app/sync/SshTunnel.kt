@@ -13,7 +13,7 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
-import java.nio.channels.ServerSocketChannel
+import java.net.Socket
 import java.security.MessageDigest
 import java.security.PublicKey
 import java.util.Base64
@@ -76,25 +76,25 @@ class SshjTunnel : SshTunnel {
             client.connect(spec.host, spec.port)
             client.authPublickey(spec.user, client.loadKeys(spec.privateKeyPem, null, null))
 
-            val serverChannel = ServerSocketChannel.open()
-            serverChannel.bind(InetSocketAddress(InetAddress.getByName(LOOPBACK), 0), BACKLOG)
-            val serverSocket = serverChannel.socket()
+            // Plain ServerSocket (not NIO): its accepted Socket's input and
+            // output streams can be read and written concurrently without
+            // serializing on a shared channel lock (Android's SocketChannel
+            // blocks a write while a read is outstanding).
+            val serverSocket = ServerSocket(0, BACKLOG, InetAddress.getByName(LOOPBACK))
             val closed = CompletableDeferred<Unit>()
             val worker = when (spec.transport) {
                 Transport.SOCKET -> startForwarding(client, serverSocket, spec.remoteSocketPort, closed)
-                Transport.SSH_EXEC -> startExecRelay(client, serverChannel, spec.serverCommand, closed)
+                Transport.SSH_EXEC -> startExecRelay(client, serverSocket, spec.serverCommand, closed)
             }
             object : TunnelHandle {
                 override val localPort: Int = serverSocket.localPort
 
                 override fun close() {
                     client.runCatching { disconnect() }
-                    // Closing the channel (rather than only the socket) reliably
-                    // unblocks a concurrent accept() on the worker thread.
-                    serverChannel.runCatching { close() }
+                    // Closing a ServerSocket does not reliably unblock a
+                    // concurrent accept(); connect once to wake it, then close.
+                    runCatching { Socket(LOOPBACK, serverSocket.localPort).close() }
                     serverSocket.runCatching { close() }
-                    // Wait for the worker to unwind so the local port is fully
-                    // released before callers proceed.
                     runCatching { worker.join(CLOSE_JOIN_MS) }
                     closed.complete(Unit)
                 }
@@ -130,30 +130,30 @@ class SshjTunnel : SshTunnel {
 
     private fun startExecRelay(
         client: SSHClient,
-        serverChannel: ServerSocketChannel,
+        serverSocket: ServerSocket,
         serverCommand: String,
         closed: CompletableDeferred<Unit>,
     ): Thread {
         val session = client.startSession()
         val command = session.exec("$serverCommand -server")
-        return thread(name = "ssh-exec-relay-${serverChannel.socket().localPort}", isDaemon = true) {
+        return thread(name = "ssh-exec-relay-${serverSocket.localPort}", isDaemon = true) {
             try {
-                serverChannel.accept().socket().use { local ->
+                serverSocket.accept().use { accepted ->
                     // Drain the remote stderr so the channel's window can't fill
                     // and block the remote `unison -server`.
                     val err = thread(name = "ssh-exec-relay-err", isDaemon = true) {
-                        runCatching { command.errorStream?.copyTo(System.err) }
+                        runCatching { command.errorStream?.let(::drain) }
                     }
                     val up = thread(name = "ssh-exec-relay-up", isDaemon = true) {
                         // Flush after every write: sshj buffers the channel
                         // output, and unison waits for the server's reply before
                         // sending more, so a deferred flush would deadlock.
-                        runCatching { pump(local.getInputStream(), command.outputStream) }
+                        runCatching { pump(accepted.getInputStream(), command.outputStream) }
                         runCatching { command.outputStream.close() }
                     }
                     val down = thread(name = "ssh-exec-relay-down", isDaemon = true) {
-                        runCatching { pump(command.inputStream, local.getOutputStream()) }
-                        runCatching { local.close() }
+                        runCatching { pump(command.inputStream, accepted.getOutputStream()) }
+                        runCatching { accepted.close() }
                     }
                     up.join(RELAY_JOIN_MS)
                     down.join(RELAY_JOIN_MS)
@@ -163,7 +163,7 @@ class SshjTunnel : SshTunnel {
             } finally {
                 runCatching { command.close() }
                 runCatching { session.close() }
-                serverChannel.runCatching { close() }
+                serverSocket.runCatching { close() }
                 closed.complete(Unit)
             }
         }
@@ -176,6 +176,13 @@ class SshjTunnel : SshTunnel {
             if (n < 0) break
             output.write(buffer, 0, n)
             output.flush()
+        }
+    }
+
+    private fun drain(input: java.io.InputStream) {
+        val buffer = ByteArray(RELAY_BUFFER)
+        while (input.read(buffer) >= 0) {
+            // discard
         }
     }
 

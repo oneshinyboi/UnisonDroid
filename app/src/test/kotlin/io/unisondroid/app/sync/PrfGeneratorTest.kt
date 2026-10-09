@@ -31,7 +31,16 @@ class PrfGeneratorTest {
 
         val lines = out.lines()
         assertEquals("root = /storage/emulated/0/Documents", lines[0])
-        assertEquals("root = socket://127.0.0.1:22334", lines[1])
+        assertEquals("root = socket://127.0.0.1:22334//srv/sync", lines[1])
+    }
+
+    @Test
+    fun `socket root carries the remote root path`() {
+        val out = PrfGenerator.generate(profile(), localSocketPort = 22334)
+        assertTrue(
+            out.contains("root = socket://127.0.0.1:22334//srv/sync\n"),
+            "the socket root must include the profile's remote root, got:\n$out",
+        )
     }
 
     @Test
@@ -73,7 +82,7 @@ class PrfGeneratorTest {
         )
         val expected = """
             root = /storage/emulated/0/My Folder/中文
-            root = socket://127.0.0.1:22334
+            root = socket://127.0.0.1:22334//srv/sync
             perms = 0
             links = false
             fat = true
@@ -88,7 +97,7 @@ class PrfGeneratorTest {
     @Test
     fun `empty ignores and advanced leave no blank residue`() {
         val expected = "root = /storage/emulated/0/Documents\n" +
-            "root = socket://127.0.0.1:22334\n" +
+            "root = socket://127.0.0.1:22334//srv/sync\n" +
             "perms = 0\n" +
             "links = false\n" +
             "fat = true\n"
