@@ -14,6 +14,7 @@ import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -47,7 +48,7 @@ class ProfileEditorScreenTest {
         dir = Files.createTempDirectory("profile-editor-test").toFile()
         val store = JsonStore(dir)
         repository = ProfileRepository(store)
-        vault = KeyVault(store, XorCipher)
+        vault = KeyVault(store, XorCipher, FakeSshTool())
         runBlocking { vault.generate("laptop") }
         ServiceLocator.reset()
         ServiceLocator.profilesProvider = { repository }
@@ -129,6 +130,7 @@ class ProfileEditorScreenTest {
         val emptyVault = KeyVault(
             JsonStore(Files.createTempDirectory("empty-vault").toFile()),
             XorCipher,
+            FakeSshTool(),
         )
         ServiceLocator.keysProvider = { emptyVault }
         var saved = false

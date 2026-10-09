@@ -14,6 +14,7 @@ import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncService
 import io.unisondroid.app.sync.BinaryLocator
+import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.sync.HostKeyDecision
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.SshTunnel
@@ -183,7 +184,7 @@ class RunScreenTest {
 private class FakeSyncEngine : SyncEngine(
     BinaryLocator(File("/nonexistent/native-lib")),
     ProfileRepository(JsonStore(File("/nonexistent/data"))),
-    KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher),
+    KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher, FakeSshTool()),
     HostKeyStore(JsonStore(File("/nonexistent/data"))),
     NoopTunnel,
     { UnisonRunner(it) },

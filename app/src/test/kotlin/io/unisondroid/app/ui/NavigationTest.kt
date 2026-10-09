@@ -9,6 +9,7 @@ import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import org.junit.After
 import org.junit.Before
@@ -34,7 +35,7 @@ class NavigationTest {
         val store = JsonStore(dir)
         ServiceLocator.reset()
         ServiceLocator.profilesProvider = { ProfileRepository(store) }
-        ServiceLocator.keysProvider = { KeyVault(store, XorCipher) }
+        ServiceLocator.keysProvider = { KeyVault(store, XorCipher, FakeSshTool()) }
     }
 
     @After

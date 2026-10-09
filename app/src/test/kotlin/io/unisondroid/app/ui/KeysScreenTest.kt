@@ -13,6 +13,8 @@ import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.sync.FakeSshTool
+import io.unisondroid.app.sync.SshToolException
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -37,11 +39,13 @@ class KeysScreenTest {
     val compose = createComposeRule()
 
     private lateinit var vault: KeyVault
+    private lateinit var tool: FakeSshTool
 
     @Before
     fun setUp() {
         val dir = Files.createTempDirectory("keys-screen-test").toFile()
-        vault = KeyVault(JsonStore(dir), XorCipher)
+        tool = FakeSshTool()
+        vault = KeyVault(JsonStore(dir), XorCipher, tool)
         ServiceLocator.reset()
         ServiceLocator.keysProvider = { vault }
     }
@@ -82,6 +86,7 @@ class KeysScreenTest {
 
     @Test
     fun `import with invalid PEM shows an error snackbar and adds no key`() {
+        tool.deriveException = SshToolException("not a key")
         compose.setContent { UnisonDroidTheme { KeysScreen() } }
 
         compose.onNodeWithTag(KEYS_IMPORT_TAG).performClick()

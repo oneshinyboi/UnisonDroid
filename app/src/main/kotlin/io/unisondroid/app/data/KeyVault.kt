@@ -2,13 +2,11 @@ package io.unisondroid.app.data
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import io.unisondroid.app.sync.SshTool
+import io.unisondroid.app.sync.SshToolException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.common.Buffer
-import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
 import javax.crypto.Cipher
@@ -64,23 +62,33 @@ class KeystoreAesCipher : KeyCipher {
 
 class KeyVaultException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-class KeyVault(private val store: JsonStore, private val cipher: KeyCipher) {
+class KeyVault(
+    private val store: JsonStore,
+    private val cipher: KeyCipher,
+    private val tool: SshTool,
+) {
 
     private val mutex = Mutex()
 
     suspend fun generate(name: String): SshKey = mutex.withLock {
-        val (pem, publicBlob) = generateEd25519OpenSshKeyPem(name)
-        persist(name, pem, publicLine("ssh-ed25519", publicBlob, name))
+        val generated = try {
+            tool.generateKey(name)
+        } catch (e: SshToolException) {
+            throw KeyVaultException("Key generation failed", e)
+        }
+        persist(name, generated.privatePem, generated.publicKeyLine)
     }
 
     suspend fun importOpenSsh(name: String, pem: String): SshKey = mutex.withLock {
-        val (type, publicBlob) = try {
-            val provider = SSHClient().loadKeys(pem, null, null)
-            provider.type.toString() to Buffer.PlainBuffer().putPublicKey(provider.public).compactData
-        } catch (e: Exception) {
+        val publicKey = try {
+            tool.derivePublicKey(pem)
+        } catch (e: SshToolException) {
             throw KeyVaultException("Malformed OpenSSH private key", e)
         }
-        persist(name, pem, publicLine(type, publicBlob, name))
+        val parts = publicKey.trim().split(" ")
+        val type = parts.getOrElse(0) { "unknown" }
+        val blob = parts.getOrNull(1).orEmpty()
+        persist(name, pem, publicLine(type, blob, name))
     }
 
     suspend fun keys(): List<SshKey> = readAll()
@@ -113,42 +121,5 @@ class KeyVault(private val store: JsonStore, private val cipher: KeyCipher) {
     }
 }
 
-internal fun publicLine(type: String, publicBlob: ByteArray, comment: String): String =
-    "$type ${Base64.getEncoder().encodeToString(publicBlob)} $comment"
-
-internal fun generateEd25519OpenSshKeyPem(comment: String): Pair<String, ByteArray> {
-    val privateKey = Ed25519PrivateKeyParameters(SecureRandom())
-    val publicKey = privateKey.generatePublicKey()
-    val pubBytes = publicKey.encoded
-    val seed = privateKey.encoded
-
-    val publicBlob = Buffer.PlainBuffer()
-        .putString("ssh-ed25519")
-        .putString(pubBytes)
-        .compactData
-
-    val privateKeyBody = Buffer.PlainBuffer()
-        .putUInt32(CHECK_INT)
-        .putUInt32(CHECK_INT)
-        .putString("ssh-ed25519")
-        .putString(pubBytes)
-        .putString(seed + pubBytes)
-        .putString(comment)
-        .compactData
-    val padding = ByteArray((8 - privateKeyBody.size % 8) % 8) { (it + 1).toByte() }
-
-    val container = Buffer.PlainBuffer()
-        .putRawBytes("openssh-key-v1\u0000".toByteArray(Charsets.ISO_8859_1))
-        .putString("none")
-        .putString("none")
-        .putString("")
-        .putUInt32(1)
-        .putString(publicBlob)
-        .putString(privateKeyBody + padding)
-        .compactData
-    val base64 = Base64.getMimeEncoder(70, byteArrayOf('\n'.code.toByte())).encodeToString(container)
-    val pem = "-----BEGIN OPENSSH PRIVATE KEY-----\n$base64\n-----END OPENSSH PRIVATE KEY-----\n"
-    return pem to publicBlob
-}
-
-private const val CHECK_INT = 1_234_567_890L
+internal fun publicLine(type: String, blobBase64: String, comment: String): String =
+    "$type $blobBase64 $comment"

@@ -449,7 +449,7 @@ class SyncEngineTest {
         }
         val store = JsonStore(dataDir)
         val repo = ProfileRepository(store)
-        val vault = KeyVault(store, IdentityCipher)
+        val vault = KeyVault(store, IdentityCipher, FakeSshTool())
         val hostKeys = HostKeyStore(store)
         val key = vault.generate("phone-key")
         val profiles = profileIds.associateWith { profile(it, key.id) }
