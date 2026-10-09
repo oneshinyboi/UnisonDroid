@@ -141,8 +141,18 @@ class SshTunnelTest {
         handle.close()
         handle.awaitClosed()
 
-        assertThrows(IOException::class.java) {
-            Socket().connect(InetSocketAddress(InetAddress.getByName(LOOPBACK), localPort), 2_000)
+        // The tunnel must have released its listener: the same loopback port can
+        // be bound again. (Asserting that a connect() is refused instead is racy
+        // on a shared host, where an unrelated process may grab the ephemeral
+        // port the instant we release it.)
+        val probe = ServerSocket()
+        probe.reuseAddress = true
+        try {
+            probe.bind(InetSocketAddress(InetAddress.getByName(LOOPBACK), localPort))
+        } catch (e: java.net.BindException) {
+            assertTrue(false, "local port $localPort was not released after close: ${e.message}")
+        } finally {
+            probe.close()
         }
     }
 
