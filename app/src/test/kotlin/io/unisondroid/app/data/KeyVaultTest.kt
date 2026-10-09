@@ -23,7 +23,7 @@ class KeyVaultTest {
     fun `generate persists and round-trips via privateKeyPem`() = runTest {
         val tool = FakeSshTool()
         tool.generated = GeneratedKey(
-            privatePem = generateEd25519OpenSshKeyPem("laptop").first,
+            privatePem = FIXTURE_PEM,
             publicKeyLine = "ssh-ed25519 AAAAZ2VuZXJhdGVk laptop",
         )
         val vault = KeyVault(JsonStore(dir), cipher, tool)
@@ -44,7 +44,7 @@ class KeyVaultTest {
     fun `import persists derived public key`() = runTest {
         val tool = FakeSshTool()
         val vault = KeyVault(JsonStore(dir), cipher, tool)
-        val pem = generateEd25519OpenSshKeyPem("seed").first
+        val pem = FIXTURE_PEM
 
         val key = vault.importOpenSsh("server", pem)
 
@@ -102,5 +102,12 @@ class KeyVaultTest {
             ByteArray(plain.size) { (plain[it].toInt() xor 0x5A).toByte() }
 
         override fun decrypt(blob: ByteArray): ByteArray = encrypt(blob)
+    }
+
+    private companion object {
+        val FIXTURE_PEM = "-----BEGIN OPENSSH PRIVATE KEY-----\n" +
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n" +
+            "QyNTUxOQAAACCfixturefixturefixturefixturefixturefixturefixturefixtures=\n" +
+            "-----END OPENSSH PRIVATE KEY-----\n"
     }
 }

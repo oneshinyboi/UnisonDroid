@@ -15,14 +15,10 @@ import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncService
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.FakeSshTool
-import io.unisondroid.app.sync.HostKeyDecision
 import io.unisondroid.app.sync.OutputParser
-import io.unisondroid.app.sync.SshTunnel
 import io.unisondroid.app.sync.SyncEngine
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
-import io.unisondroid.app.sync.TunnelHandle
-import io.unisondroid.app.sync.TunnelSpec
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow

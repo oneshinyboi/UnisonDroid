@@ -94,8 +94,6 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.sshj)
-    implementation(libs.bcprov)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(platform(libs.androidx.compose.bom))
@@ -104,12 +102,10 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testRuntimeOnly(libs.junit.vintage.engine)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.sshd.core)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.compose.ui.test.junit4)
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    debugImplementation(libs.slf4j.simple)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

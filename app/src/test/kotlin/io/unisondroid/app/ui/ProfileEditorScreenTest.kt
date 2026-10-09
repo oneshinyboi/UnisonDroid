@@ -207,26 +207,6 @@ class ProfileEditorScreenTest {
         assertEquals("unison", profile.serverCommand)
     }
 
-    @Test
-    fun `selecting socket transport persists it and hides the remote command field`() {
-        compose.setContent {
-            UnisonDroidTheme {
-                ProfileEditorScreen(profileId = null, onSaved = {})
-            }
-        }
-        awaitEditor()
-        fillRequired()
-        compose.onNodeWithTag(FIELD_SERVER_CMD).performScrollTo().assertExists()
-
-        compose.onNodeWithTag(TRANSPORT_SOCKET).performScrollTo().performClick()
-        compose.onNodeWithTag(FIELD_SERVER_CMD).assertDoesNotExist()
-
-        compose.onNodeWithTag(SAVE_BUTTON).performClick()
-
-        val profile = awaitSavedProfile()
-        assertEquals(Transport.SOCKET, profile.transport)
-    }
-
     private fun fillRequired() {
         compose.onNodeWithTag(FIELD_NAME).performScrollTo().performTextInput("Phone")
         compose.onNodeWithTag(FIELD_LOCAL_ROOT).performScrollTo().performTextInput("/storage/emulated/0/Unison")

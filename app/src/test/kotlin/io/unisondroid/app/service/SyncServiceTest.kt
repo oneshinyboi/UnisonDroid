@@ -12,14 +12,10 @@ import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.FakeSshTool
-import io.unisondroid.app.sync.HostKeyDecision
 import io.unisondroid.app.sync.OutputParser
-import io.unisondroid.app.sync.SshTunnel
 import io.unisondroid.app.sync.SyncEngine
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
-import io.unisondroid.app.sync.TunnelHandle
-import io.unisondroid.app.sync.TunnelSpec
 import io.unisondroid.app.sync.UnisonRunner
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -321,9 +317,4 @@ private class TestSyncEngine : SyncEngine(
 private object IdentityCipher : KeyCipher {
     override fun encrypt(plain: ByteArray): ByteArray = plain
     override fun decrypt(blob: ByteArray): ByteArray = blob
-}
-
-private object ThrowingTunnel : SshTunnel {
-    override suspend fun open(spec: TunnelSpec, decision: HostKeyDecision): TunnelHandle =
-        throw UnsupportedOperationException("not used in service tests")
 }
