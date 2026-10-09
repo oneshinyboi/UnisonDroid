@@ -62,6 +62,7 @@ internal fun hostKeyFingerprint(key: PublicKey): String {
 class SshjTunnel : SshTunnel {
 
     override suspend fun open(spec: TunnelSpec, decision: HostKeyDecision): TunnelHandle = withContext(Dispatchers.IO) {
+        SshCrypto.ensureInstalled()
         val client = SSHClient()
         client.addHostKeyVerifier(object : HostKeyVerifier {
             override fun verify(hostname: String?, port: Int, key: PublicKey?): Boolean {
