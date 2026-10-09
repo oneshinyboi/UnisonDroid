@@ -70,7 +70,7 @@ class ProcessSshTool(
         val output = run(
             listOf(
                 keyscan.absolutePath, "-T", "5",
-                "-t", "ed25519,ecdsa-sha2-nistp256,rsa-sha2-256,rsa-sha2-512",
+                "-t", "ed25519,ecdsa,rsa",
                 "-p", port.toString(), host,
             ),
         )

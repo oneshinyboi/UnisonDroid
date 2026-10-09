@@ -100,7 +100,7 @@ class SyncEngineTest {
         val prf = File(unisonDir, "prof1.prf").readText()
         assertEquals(prf, prfAtRunnerStart)
         assertTrue(prf.contains("root = /storage/emulated/0/Sync"), "got:\n$prf")
-        assertTrue(prf.contains("root = ssh://syncuser@$HOST/srv/sync"), "got:\n$prf")
+        assertTrue(prf.contains("root = ssh://syncuser@$HOST//srv/sync"), "got:\n$prf")
         assertTrue(prf.contains(" -p $SSH_PORT"), "got:\n$prf")
         assertTrue(prf.contains("perms = 0"))
 

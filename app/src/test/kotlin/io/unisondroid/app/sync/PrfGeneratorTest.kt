@@ -43,10 +43,10 @@ class PrfGeneratorTest {
         val lines = out.lines()
 
         assertEquals("root = /storage/emulated/0/Documents", lines[0])
-        assertEquals("root = ssh://diamond@server.example/srv/sync", lines[1])
+        assertEquals("root = ssh://diamond@server.example//srv/sync", lines[1])
+        assertEquals("sshcmd = /data/app/lib/arm64/libssh.so", lines[2])
         assertEquals(
-            "ssh = /data/app/lib/arm64/libssh.so" +
-                " -F none" +
+            "sshargs = -F none" +
                 " -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
                 " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
                 " -o StrictHostKeyChecking=yes" +
@@ -54,9 +54,9 @@ class PrfGeneratorTest {
                 " -o IdentitiesOnly=yes" +
                 " -o LogLevel=ERROR" +
                 " -p 22",
-            lines[2],
+            lines[3],
         )
-        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(3, 6))
+        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(4, 7))
     }
 
     @Test
@@ -82,7 +82,7 @@ class PrfGeneratorTest {
         val out = PrfGenerator.generate(p, sshCommand())
 
         assertTrue(out.contains("root = /storage/emulated/0/My Folder/中文\n"), "got:\n$out")
-        assertTrue(out.contains("root = ssh://diamond@server.example/home/Diamond/my folder ♥\n"), "got:\n$out")
+        assertTrue(out.contains("root = ssh://diamond@server.example//home/Diamond/my folder ♥\n"), "got:\n$out")
     }
 
     @Test
@@ -121,8 +121,9 @@ class PrfGeneratorTest {
     @Test
     fun `empty ignores and advanced leave no blank residue`() {
         val expected = "root = /storage/emulated/0/Documents\n" +
-            "root = ssh://diamond@server.example/srv/sync\n" +
-            "ssh = /data/app/lib/arm64/libssh.so -F none -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
+            "root = ssh://diamond@server.example//srv/sync\n" +
+            "sshcmd = /data/app/lib/arm64/libssh.so\n" +
+            "sshargs = -F none -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
             " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
             " -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes" +
             " -o LogLevel=ERROR -p 22\n" +
