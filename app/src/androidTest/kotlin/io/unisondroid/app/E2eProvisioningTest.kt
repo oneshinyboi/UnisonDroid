@@ -8,6 +8,7 @@ import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.Transport
+import io.unisondroid.app.sync.ProcessSshTool
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,7 +21,13 @@ class E2eProvisioningTest {
     fun provisionProfileAndKey() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val store = JsonStore(context.filesDir)
-        val vault = KeyVault(store, KeystoreAesCipher())
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        val tool = ProcessSshTool(
+            keygen = File(nativeDir, "libssh-keygen.so"),
+            keyscan = File(nativeDir, "libssh-keyscan.so"),
+            workDir = context.cacheDir,
+        )
+        val vault = KeyVault(store, KeystoreAesCipher(), tool)
         val key = vault.keys().firstOrNull { it.name == KEY_NAME } ?: vault.generate(KEY_NAME)
         val profiles = ProfileRepository(store)
         profiles.save(

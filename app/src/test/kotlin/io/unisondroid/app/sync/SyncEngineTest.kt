@@ -115,12 +115,11 @@ class SyncEngineTest {
         assertEquals(mapOf("UNISON" to unisonDir.absolutePath), env)
         assertEquals(listOf("prof1", "-batch"), args)
 
-        val expectedPrf = PrfGenerator.generate(h.profiles.getValue("prof1"), FAKE_LOCAL_PORT)
-        assertEquals(expectedPrf, prfAtRunnerStart)
-        assertEquals(expectedPrf, File(unisonDir, "prof1.prf").readText())
-        assertTrue(expectedPrf.contains("root = /storage/emulated/0/Sync"))
-        assertTrue(expectedPrf.contains("root = socket://127.0.0.1:$FAKE_LOCAL_PORT"))
-        assertTrue(expectedPrf.contains("perms = 0"))
+        val prf = File(unisonDir, "prof1.prf").readText()
+        assertEquals(prf, prfAtRunnerStart)
+        assertTrue(prf.contains("root = /storage/emulated/0/Sync"))
+        assertTrue(prf.contains("root = ssh://syncuser@sync.example.com/srv/sync"))
+        assertTrue(prf.contains("perms = 0"))
     }
 
     @Test

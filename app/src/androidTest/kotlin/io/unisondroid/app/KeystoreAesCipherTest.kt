@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.KeystoreAesCipher
+import io.unisondroid.app.sync.ProcessSshTool
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -35,9 +36,15 @@ class KeystoreAesCipherTest {
 
     @Test
     fun keyVault_generate_privateKeyPemRoundTrips() = runBlocking {
-        val cacheDir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
-        val dir = File(cacheDir, "keystore_test_${System.nanoTime()}").apply { mkdirs() }
-        val vault = KeyVault(JsonStore(dir), KeystoreAesCipher())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = File(context.cacheDir, "keystore_test_${System.nanoTime()}").apply { mkdirs() }
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        val tool = ProcessSshTool(
+            keygen = File(nativeDir, "libssh-keygen.so"),
+            keyscan = File(nativeDir, "libssh-keyscan.so"),
+            workDir = context.cacheDir,
+        )
+        val vault = KeyVault(JsonStore(dir), KeystoreAesCipher(), tool)
 
         val key = vault.generate("e2e-key")
         assertTrue("public key must be OpenSSH ed25519", key.publicKey.startsWith("ssh-ed25519 "))

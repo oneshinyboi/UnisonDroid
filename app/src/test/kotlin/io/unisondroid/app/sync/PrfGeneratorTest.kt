@@ -5,57 +5,102 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.File
 
 class PrfGeneratorTest {
 
     private fun profile(
         localRoot: String = "/storage/emulated/0/Documents",
+        remoteRoot: String = "/srv/sync",
+        sshPort: Int = 22,
+        serverCommand: String = "unison",
         ignorePatterns: List<String> = emptyList(),
         advancedPrefs: String = "",
     ) = Profile(
         id = "p1",
         name = "Phone",
         localRoot = localRoot,
-        remoteRoot = "/srv/sync",
+        remoteRoot = remoteRoot,
         host = "server.example",
-        sshPort = 22,
+        sshPort = sshPort,
         user = "diamond",
         sshKeyId = "key-1",
+        serverCommand = serverCommand,
         ignorePatterns = ignorePatterns,
         advancedPrefs = advancedPrefs,
     )
 
-    @Test
-    fun `roots come first, local root then socket root`() {
-        val out = PrfGenerator.generate(profile(), localSocketPort = 22334)
+    private fun sshCommand(port: Int = 22) = SshCommand(
+        binary = File("/data/app/lib/arm64/libssh.so"),
+        keyFile = File("/data/data/io.unisondroid.app/no_backup/ssh/key-1"),
+        knownHosts = File("/data/data/io.unisondroid.app/no_backup/ssh/known_hosts"),
+        port = port,
+    )
 
+    @Test
+    fun `roots and ssh line come first in order`() {
+        val out = PrfGenerator.generate(profile(), sshCommand())
         val lines = out.lines()
+
         assertEquals("root = /storage/emulated/0/Documents", lines[0])
-        assertEquals("root = socket://127.0.0.1:22334//srv/sync", lines[1])
-    }
-
-    @Test
-    fun `socket root carries the remote root path`() {
-        val out = PrfGenerator.generate(profile(), localSocketPort = 22334)
-        assertTrue(
-            out.contains("root = socket://127.0.0.1:22334//srv/sync\n"),
-            "the socket root must include the profile's remote root, got:\n$out",
+        assertEquals("root = ssh://diamond@server.example/srv/sync", lines[1])
+        assertEquals(
+            "ssh = /data/app/lib/arm64/libssh.so" +
+                " -F none" +
+                " -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
+                " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
+                " -o StrictHostKeyChecking=yes" +
+                " -o BatchMode=yes" +
+                " -o IdentitiesOnly=yes" +
+                " -o LogLevel=ERROR" +
+                " -p 22",
+            lines[2],
         )
+        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(3, 6))
     }
 
     @Test
-    fun `defaults block contains Android values`() {
-        val out = PrfGenerator.generate(profile(), localSocketPort = 22334)
+    fun `no socket root is ever emitted`() {
+        val out = PrfGenerator.generate(profile(), sshCommand())
+        assertFalse(out.contains("socket://"), "got:\n$out")
+    }
 
-        val lines = out.lines()
-        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(2, 5))
+    @Test
+    fun `servercmd is emitted only when the command differs from unison`() {
+        assertFalse(PrfGenerator.generate(profile(), sshCommand()).contains("servercmd"))
+
+        val custom = PrfGenerator.generate(profile(serverCommand = "/usr/local/bin/unison"), sshCommand())
+        assertTrue(custom.contains("servercmd = /usr/local/bin/unison\n"), "got:\n$custom")
+    }
+
+    @Test
+    fun `roots with spaces and unicode are emitted verbatim`() {
+        val p = profile(
+            localRoot = "/storage/emulated/0/My Folder/中文",
+            remoteRoot = "/home/Diamond/my folder ♥",
+        )
+        val out = PrfGenerator.generate(p, sshCommand())
+
+        assertTrue(out.contains("root = /storage/emulated/0/My Folder/中文\n"), "got:\n$out")
+        assertTrue(out.contains("root = ssh://diamond@server.example/home/Diamond/my folder ♥\n"), "got:\n$out")
+    }
+
+    @Test
+    fun `non-default port appears only in the ssh line`() {
+        val out = PrfGenerator.generate(profile(sshPort = 2222), sshCommand(port = 2222))
+
+        assertTrue(out.contains(" -p 2222"), "got:\n$out")
+        assertFalse(
+            out.contains(":2222"),
+            "the port must not appear in the ssh:// root, got:\n$out",
+        )
     }
 
     @Test
     fun `each ignore pattern emits ignore = Path line`() {
         val out = PrfGenerator.generate(
             profile(ignorePatterns = listOf("*.tmp", ".thumbnails", "My Folder/Keep*")),
-            localSocketPort = 22334,
+            sshCommand(),
         )
 
         assertTrue(out.contains("ignore = Path *.tmp\n"))
@@ -67,47 +112,30 @@ class PrfGeneratorTest {
     fun `advanced block appended after ignores`() {
         val out = PrfGenerator.generate(
             profile(ignorePatterns = listOf("*.bak"), advancedPrefs = "fastcheck = false\n"),
-            localSocketPort = 22334,
+            sshCommand(),
         )
 
         assertTrue(out.indexOf("ignore = Path *.bak") < out.indexOf("fastcheck = false"))
     }
 
     @Test
-    fun `full output with unicode and space path is byte-identical`() {
-        val p = profile(
-            localRoot = "/storage/emulated/0/My Folder/中文",
-            ignorePatterns = listOf("*.tmp", ".thumbnails"),
-            advancedPrefs = "fastcheck = false\n",
-        )
-        val expected = """
-            root = /storage/emulated/0/My Folder/中文
-            root = socket://127.0.0.1:22334//srv/sync
-            perms = 0
-            links = false
-            fat = true
-            ignore = Path *.tmp
-            ignore = Path .thumbnails
-            fastcheck = false
-        """.trimIndent() + "\n"
-
-        assertEquals(expected, PrfGenerator.generate(p, localSocketPort = 22334))
-    }
-
-    @Test
     fun `empty ignores and advanced leave no blank residue`() {
         val expected = "root = /storage/emulated/0/Documents\n" +
-            "root = socket://127.0.0.1:22334//srv/sync\n" +
+            "root = ssh://diamond@server.example/srv/sync\n" +
+            "ssh = /data/app/lib/arm64/libssh.so -F none -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
+            " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
+            " -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes" +
+            " -o LogLevel=ERROR -p 22\n" +
             "perms = 0\n" +
             "links = false\n" +
             "fat = true\n"
 
-        assertEquals(expected, PrfGenerator.generate(profile(), localSocketPort = 22334))
+        assertEquals(expected, PrfGenerator.generate(profile(), sshCommand()))
     }
 
     @Test
     fun `advanced without trailing newline still ends with single newline`() {
-        val out = PrfGenerator.generate(profile(advancedPrefs = "fastcheck = false"), localSocketPort = 22334)
+        val out = PrfGenerator.generate(profile(advancedPrefs = "fastcheck = false"), sshCommand())
 
         assertTrue(out.endsWith("fastcheck = false\n"))
         assertFalse(out.endsWith("\n\n"))

@@ -199,7 +199,13 @@ open class SyncEngine(
             }
 
             unisonDir.mkdirs()
-            File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, opened.localPort))
+            val sshCommand = SshCommand(
+                binary = File(binary.parentFile, "libssh.so"),
+                keyFile = File(unisonDir, p.sshKeyId),
+                knownHosts = File(unisonDir, "known_hosts"),
+                port = p.sshPort,
+            )
+            File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand))
 
             val proc = runnerFactory(binary).start(
                 env = mapOf("UNISON" to unisonDir.absolutePath),

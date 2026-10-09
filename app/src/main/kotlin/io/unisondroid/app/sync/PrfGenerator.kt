@@ -1,19 +1,38 @@
 package io.unisondroid.app.sync
 
 import io.unisondroid.app.data.Profile
+import java.io.File
+
+data class SshCommand(
+    val binary: File,
+    val keyFile: File,
+    val knownHosts: File,
+    val port: Int,
+)
 
 object PrfGenerator {
 
-    fun generate(profile: Profile, localSocketPort: Int): String {
+    fun generate(profile: Profile, ssh: SshCommand): String {
         val sb = StringBuilder()
         sb.append("root = ").append(profile.localRoot).append('\n')
-        // Remote root on the server, as part of the socket root
-        // (socket://host:port/path; an absolute path yields a double slash).
-        sb.append("root = socket://127.0.0.1:").append(localSocketPort)
-            .append('/').append(profile.remoteRoot).append('\n')
+        sb.append("root = ssh://").append(profile.user).append('@').append(profile.host)
+            .append(profile.remoteRoot).append('\n')
+        sb.append("ssh = ").append(ssh.binary.absolutePath)
+            .append(" -F none")
+            .append(" -i ").append(ssh.keyFile.absolutePath)
+            .append(" -o UserKnownHostsFile=").append(ssh.knownHosts.absolutePath)
+            .append(" -o StrictHostKeyChecking=yes")
+            .append(" -o BatchMode=yes")
+            .append(" -o IdentitiesOnly=yes")
+            .append(" -o LogLevel=ERROR")
+            .append(" -p ").append(ssh.port)
+            .append('\n')
         sb.append("perms = 0\n")
         sb.append("links = false\n")
         sb.append("fat = true\n")
+        if (profile.serverCommand.isNotEmpty() && profile.serverCommand != DEFAULT_SERVER_COMMAND) {
+            sb.append("servercmd = ").append(profile.serverCommand).append('\n')
+        }
         // Unison locks each archive so two clients can't corrupt it. Its Unix
         // lock uses a hard link (src/lock.ml), which Android's SELinux policy
         // denies for untrusted_app on app_data_file. native/build-unison.sh
@@ -32,4 +51,6 @@ object PrfGenerator {
         }
         return sb.toString()
     }
+
+    private const val DEFAULT_SERVER_COMMAND = "unison"
 }
