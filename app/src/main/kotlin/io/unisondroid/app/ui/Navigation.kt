@@ -1,12 +1,6 @@
 package io.unisondroid.app.ui
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -59,17 +53,7 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
         ) { entry ->
             RunScreen(profileId = entry.arguments?.getString("id").orEmpty())
         }
-        composable(Routes.KEYS) { PlaceholderScreen(title = "SSH keys") }
-        composable(Routes.ABOUT) { PlaceholderScreen(title = "About") }
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(title: String, subtitle: String? = null) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = if (subtitle == null) title else "$title: $subtitle",
-            style = MaterialTheme.typography.headlineSmall,
-        )
+        composable(Routes.KEYS) { KeysScreen() }
+        composable(Routes.ABOUT) { AboutScreen() }
     }
 }
