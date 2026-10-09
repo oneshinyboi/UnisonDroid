@@ -65,6 +65,9 @@ class SyncService : LifecycleService() {
         )
 
         val engine = ServiceLocator.engine(applicationContext)
+        stopped = false
+        sawActiveState = false
+        lastState = SyncState.Idle
         syncInFlight = true
         if (!observing) {
             observing = true
@@ -83,6 +86,7 @@ class SyncService : LifecycleService() {
 
     private fun onState(state: SyncState) {
         if (stopped) return
+        if (!sawActiveState && (state is SyncState.Finished || state is SyncState.Failed)) return
         lastState = state
         when (state) {
             SyncState.Idle -> Unit
@@ -180,7 +184,25 @@ object ServiceLocator {
     @Volatile
     var engineProvider: (Context) -> SyncEngine = defaultEngineProvider
 
-    fun engine(context: Context): SyncEngine = engineProvider(context)
+    private var cached: SyncEngine? = null
+    private var cachedProvider: ((Context) -> SyncEngine)? = null
+
+    @Synchronized
+    fun engine(context: Context): SyncEngine {
+        val provider = engineProvider
+        val existing = cached
+        if (existing != null && cachedProvider === provider) return existing
+        val created = provider(context)
+        cached = created
+        cachedProvider = provider
+        return created
+    }
+
+    @Synchronized
+    fun reset() {
+        cached = null
+        cachedProvider = null
+    }
 
     private fun buildEngine(context: Context): SyncEngine {
         val store = JsonStore(context.filesDir)

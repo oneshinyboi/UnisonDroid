@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -48,6 +49,7 @@ class SyncServiceTest {
 
     @Before
     fun setUp() {
+        ServiceLocator.reset()
         engine = TestSyncEngine()
         ServiceLocator.engineProvider = { engine }
     }
@@ -57,6 +59,7 @@ class SyncServiceTest {
         runCatching { controller?.destroy() }
         controller = null
         ServiceLocator.engineProvider = ServiceLocator.defaultEngineProvider
+        ServiceLocator.reset()
     }
 
     @Test
@@ -160,6 +163,80 @@ class SyncServiceTest {
         assertTrue(shadowOf(service).isStoppedBySelf)
     }
 
+    @Test
+    fun `ServiceLocator caches one engine per provider`() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        context.applicationInfo.nativeLibraryDir = context.filesDir.absolutePath
+        ServiceLocator.engineProvider = ServiceLocator.defaultEngineProvider
+        ServiceLocator.reset()
+
+        val first = ServiceLocator.engine(context)
+        val second = ServiceLocator.engine(context)
+
+        assertSame("engine must be a per-process singleton for a given provider", first, second)
+    }
+
+    @Test
+    fun `second start on a live instance reuses the engine and keeps notifying`() {
+        val service = startService()
+        engine.states.value = SyncState.Connecting("prof1")
+        pump()
+        engine.states.value = SyncState.Finished("prof1", SyncSummary(transferred = 1, failed = 0, conflicts = 0))
+        pump()
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertEquals(1, engine.requestCount)
+
+        controller!!.startCommand(0, 1)
+
+        assertEquals(2, engine.requestCount)
+        assertEquals("Syncing…", notificationText())
+
+        engine.states.value = SyncState.Syncing("prof1", listOf("log"), 0.75f)
+        pump()
+        assertEquals("Syncing… 75%", notificationText())
+
+        engine.states.value = SyncState.Finished("prof1", SyncSummary(transferred = 2, failed = 0, conflicts = 0))
+        pump()
+        assertTrue(notificationText()!!.contains("Sync finished"))
+    }
+
+    @Test
+    fun `service can restart after a previous stop`() {
+        val service = startService()
+        engine.states.value = SyncState.Connecting("prof1")
+        pump()
+        engine.states.value = SyncState.Failed("prof1", SyncState.Reason.AUTH, "bad key")
+        pump()
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertTrue(shadowOf(service).isForegroundStopped)
+
+        controller!!.startCommand(0, 1)
+
+        assertTrue(!shadowOf(service).isForegroundStopped)
+        assertEquals("Syncing…", notificationText())
+
+        engine.states.value = SyncState.Syncing("prof1", emptyList(), 0.25f)
+        pump()
+        assertTrue(notificationText()!!.contains("Syncing"))
+
+        engine.states.value = SyncState.Finished("prof1", SyncSummary(transferred = 0, failed = 0, conflicts = 0))
+        pump()
+        assertTrue(notificationText()!!.contains("Sync finished"))
+        assertTrue("service must be able to stop itself again", shadowOf(service).isForegroundStopped)
+    }
+
+    @Test
+    fun `stale terminal state from a previous run does not flash or stop a fresh service`() {
+        engine.states.value = SyncState.Finished("prof1", SyncSummary(transferred = 9, failed = 9, conflicts = 9))
+
+        val service = startService()
+        pump()
+
+        assertEquals("Syncing…", notificationText())
+        assertTrue(!shadowOf(service).isStoppedBySelf)
+        assertTrue(!shadowOf(service).isForegroundStopped)
+    }
+
     private fun startService(): SyncService {
         val context = RuntimeEnvironment.getApplication() as Context
         controller = Robolectric.buildService(SyncService::class.java, SyncService.intent(context, "prof1"))
@@ -199,9 +276,13 @@ private class TestSyncEngine : SyncEngine(
     override val state: StateFlow<SyncState> = states.asStateFlow()
 
     var requestedProfileId: String? = null
+        private set
+    var requestCount = 0
+        private set
 
     override suspend fun requestSync(profileId: String): Boolean {
         requestedProfileId = profileId
+        requestCount += 1
         return true
     }
 }
