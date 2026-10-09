@@ -1,0 +1,8 @@
+First release.
+
+- Create profiles and sync folders with your own server over SSH using a bundled
+  Unison 2.53.8 binary.
+- Generate or import Ed25519 keys, encrypted at rest with the Android Keystore.
+- Trust-on-first-use host key verification.
+- Live log and progress on the run screen, with a summary of transferred,
+  failed, and conflicted files.

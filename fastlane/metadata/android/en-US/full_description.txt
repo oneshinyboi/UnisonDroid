@@ -1,0 +1,30 @@
+UnisonDroid is a free, open-source Android client for Unison, the file
+synchronizer. It syncs folders between your phone and your own server over an
+SSH-key-authenticated, encrypted connection — your files never touch a third
+party.
+
+How it works:
+
+1. Install the app. On the Keys screen, generate an Ed25519 key and copy its
+   public key to the authorized_keys file of the account on your server.
+2. On the server, run `unison -socket 22333` (a systemd user unit is documented
+   in the app and in the project's server-setup guide).
+3. Create a profile: pick a local folder, and enter the remote root, host, SSH
+   user and port, remote socket port, and optional ignore patterns.
+4. Tap the profile to sync. The run screen shows the live log and progress, and
+   the summary reports transferred, failed, and conflicted files.
+
+Features:
+
+- Manual, one-tap sync over SSH — no cloud, no accounts, no telemetry.
+- Ed25519 keys generated in-app or imported from OpenSSH, with private keys
+  encrypted at rest using the Android Keystore.
+- Trust-on-first-use host key verification with a hard stop if the server's
+  fingerprint changes.
+- Multiple profiles, ignore patterns, and an advanced options block for power
+  users.
+- The Unison binary is bundled, so no extra tooling is required on the phone.
+  The server still needs a matching Unison version.
+
+UnisonDroid is licensed under the GNU GPL v3. It is published on F-Droid and as
+signed APKs on GitHub Releases.
