@@ -12,6 +12,7 @@ import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
+import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.runBlocking
@@ -185,6 +186,43 @@ class ProfileEditorScreenTest {
         compose.onNodeWithTag(PATH_PICK).performClick()
 
         assertEquals(folder.absolutePath, picked)
+    }
+
+    @Test
+    fun `new profiles default to the SSH exec transport`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = null, onSaved = {})
+            }
+        }
+        awaitEditor()
+        fillRequired()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        val profile = awaitSavedProfile()
+        assertEquals(Transport.SSH_EXEC, profile.transport)
+        assertEquals("unison", profile.serverCommand)
+    }
+
+    @Test
+    fun `selecting socket transport persists it and hides the remote command field`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = null, onSaved = {})
+            }
+        }
+        awaitEditor()
+        fillRequired()
+        compose.onNodeWithTag(FIELD_SERVER_CMD).performScrollTo().assertExists()
+
+        compose.onNodeWithTag(TRANSPORT_SOCKET).performScrollTo().performClick()
+        compose.onNodeWithTag(FIELD_SERVER_CMD).assertDoesNotExist()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        val profile = awaitSavedProfile()
+        assertEquals(Transport.SOCKET, profile.transport)
     }
 
     private fun fillRequired() {

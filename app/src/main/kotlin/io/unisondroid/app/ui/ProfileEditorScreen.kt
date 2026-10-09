@@ -13,6 +13,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.SshKey
+import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
 import kotlinx.coroutines.launch
 import java.io.File
@@ -47,6 +49,9 @@ const val FIELD_SOCKET_PORT = "editor-remoteSocketPort"
 const val FIELD_KEY = "editor-sshKey"
 const val FIELD_IGNORE = "editor-ignorePatterns"
 const val FIELD_ADVANCED = "editor-advancedPrefs"
+const val FIELD_SERVER_CMD = "editor-serverCommand"
+const val TRANSPORT_EXEC = "editor-transport-exec"
+const val TRANSPORT_SOCKET = "editor-transport-socket"
 const val BROWSE_LOCAL = "editor-browseLocal"
 const val SAVE_BUTTON = "editor-save"
 const val VALIDATION_ERROR = "editor-validationError"
@@ -120,6 +125,8 @@ internal fun ProfileEditorContent(
     var ignoreText by remember(initial) {
         mutableStateOf(initial?.ignorePatterns?.joinToString("\n") ?: "")
     }
+    var transport by remember(initial) { mutableStateOf(initial?.transport ?: Transport.SSH_EXEC) }
+    var serverCommand by remember(initial) { mutableStateOf(initial?.serverCommand ?: "unison") }
     var advanced by remember(initial) { mutableStateOf(initial?.advancedPrefs ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var browsing by remember { mutableStateOf(false) }
@@ -150,6 +157,8 @@ internal fun ProfileEditorContent(
                 user = user.trim(),
                 remoteSocketPort = socketPort.toIntOrNull() ?: 22333,
                 sshKeyId = keyId,
+                transport = transport,
+                serverCommand = serverCommand.trim().ifEmpty { "unison" },
                 ignorePatterns = ignoreText.split('\n').map { it.trim() }.filter { it.isNotEmpty() },
                 advancedPrefs = advanced,
                 lastSyncedAt = initial?.lastSyncedAt,
@@ -252,6 +261,39 @@ internal fun ProfileEditorContent(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag(FIELD_USER),
             )
+
+            Text(text = "Connection", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = transport == Transport.SSH_EXEC,
+                    onClick = { transport = Transport.SSH_EXEC },
+                    label = { Text("SSH (auto-start)") },
+                    modifier = Modifier.testTag(TRANSPORT_EXEC),
+                )
+                FilterChip(
+                    selected = transport == Transport.SOCKET,
+                    onClick = { transport = Transport.SOCKET },
+                    label = { Text("Socket server") },
+                    modifier = Modifier.testTag(TRANSPORT_SOCKET),
+                )
+            }
+            Text(
+                text = if (transport == Transport.SSH_EXEC) {
+                    "Starts \"unison -server\" over SSH for each sync. No server daemon needed."
+                } else {
+                    "Connects to a running \"unison -socket\" daemon on the given socket port."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (transport == Transport.SSH_EXEC) {
+                OutlinedTextField(
+                    value = serverCommand,
+                    onValueChange = { serverCommand = it },
+                    label = { Text("Remote unison command") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag(FIELD_SERVER_CMD),
+                )
+            }
 
             Box {
                 OutlinedButton(

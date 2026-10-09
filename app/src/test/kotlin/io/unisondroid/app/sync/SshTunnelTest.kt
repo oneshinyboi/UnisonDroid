@@ -1,5 +1,6 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.Transport
 import io.unisondroid.app.data.generateEd25519OpenSshKeyPem
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -9,6 +10,7 @@ import org.apache.sshd.common.keyprovider.KeyPairProvider
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator
 import org.apache.sshd.server.forward.AcceptAllForwardingFilter
+import org.apache.sshd.server.shell.ProcessShellCommandFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.io.DataInputStream
+import java.io.File
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -31,6 +34,7 @@ import java.security.interfaces.RSAPublicKey
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
+import kotlin.io.path.createTempDirectory
 
 @Timeout(60)
 class SshTunnelTest {
@@ -63,6 +67,7 @@ class SshTunnelTest {
                 wireBlob(key).contentEquals(userPublicBlob)
             }
             forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+            commandFactory = ProcessShellCommandFactory.INSTANCE
             start()
         }
     }
@@ -156,12 +161,85 @@ class SshTunnelTest {
         }
     }
 
+    @Test
+    fun `ssh-exec relay pipes bytes through the remote command`() = runTest {
+        val script = writeFakeServerScript()
+        val handle = SshjTunnel().open(execSpec(script.absolutePath), HostKeyDecision { true })
+
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(InetAddress.getByName(LOOPBACK), handle.localPort), 10_000)
+                socket.soTimeout = 10_000
+                val payload = "hello from the local unison".toByteArray()
+                socket.getOutputStream().apply {
+                    write(payload)
+                    flush()
+                }
+                socket.shutdownOutput()
+                val echoed = socket.getInputStream().readBytes()
+                assertArrayEquals(payload, echoed)
+            }
+        } finally {
+            handle.close()
+            handle.awaitClosed()
+        }
+    }
+
+    @Test
+    fun `ssh-exec relay tears down the local port on close`() = runTest {
+        val script = writeFakeServerScript()
+        val handle = SshjTunnel().open(execSpec(script.absolutePath), HostKeyDecision { true })
+        val localPort = handle.localPort
+
+        handle.close()
+        handle.awaitClosed()
+
+        val probe = ServerSocket()
+        probe.reuseAddress = true
+        try {
+            // The JDK releases a closed ServerSocketChannel's fd asynchronously,
+            // so allow a brief window rather than asserting instant release.
+            var released = false
+            val deadline = System.currentTimeMillis() + 2_000
+            while (!released && System.currentTimeMillis() < deadline) {
+                released = try {
+                    probe.bind(InetSocketAddress(InetAddress.getByName(LOOPBACK), localPort))
+                    true
+                } catch (_: java.net.BindException) {
+                    Thread.sleep(25)
+                    false
+                }
+            }
+            assertTrue(released, "local port $localPort was not released after close")
+        } finally {
+            probe.close()
+        }
+    }
+
+    private fun writeFakeServerScript(): File {
+        val script = createTempDirectory("unisondroid-relay").resolve("fake-unison").toFile()
+        // Stands in for `unison -server`: echoes the byte stream on stdin.
+        script.writeText("#!/bin/sh\nexec cat\n")
+        script.setExecutable(true)
+        return script
+    }
+
     private fun spec() = TunnelSpec(
         host = LOOPBACK,
         port = sshd.port,
         user = "sync",
         privateKeyPem = userKeyPem,
         remoteSocketPort = echoSocket.localPort,
+        transport = Transport.SOCKET,
+    )
+
+    private fun execSpec(serverCommand: String) = TunnelSpec(
+        host = LOOPBACK,
+        port = sshd.port,
+        user = "sync",
+        privateKeyPem = userKeyPem,
+        transport = Transport.SSH_EXEC,
+        serverCommand = serverCommand,
     )
 
     private fun startEchoServer(): ServerSocket {

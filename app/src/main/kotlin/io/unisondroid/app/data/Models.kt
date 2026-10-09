@@ -13,11 +13,15 @@ data class Profile(
     val user: String,
     val remoteSocketPort: Int = 22333,
     val sshKeyId: String,
+    val transport: Transport = Transport.SSH_EXEC,
+    val serverCommand: String = "unison",
     val ignorePatterns: List<String> = emptyList(),
     val advancedPrefs: String = "",
     val lastSyncedAt: Long? = null,
     val lastResult: SyncResult? = null,
 )
+
+enum class Transport { SSH_EXEC, SOCKET }
 
 enum class SyncResult { NEVER, OK, WARNINGS, FAILED }
 

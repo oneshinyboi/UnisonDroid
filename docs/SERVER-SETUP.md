@@ -1,8 +1,13 @@
 # Server setup
 
-UnisonDroid syncs with a computer by connecting over SSH to a `unison` server
-process listening on a TCP socket. Everything below runs on the computer you
-want to sync with (the "server"), not on the phone.
+UnisonDroid syncs with a computer by connecting over SSH to a `unison` process
+on that computer. By default no server daemon is needed: for each sync the app
+opens an SSH connection and starts `unison -server` on the far side
+automatically — the same way the desktop Unison client works. Everything below
+runs on the computer you want to sync with (the "server"), not on the phone.
+
+Alternatively, a profile can be set to connect to a long-running
+`unison -socket` daemon; that mode is described at the end.
 
 ## 1. Install Unison and an SSH server
 
@@ -24,7 +29,8 @@ sudo pacman -S unison openssh
 unison -version
 ```
 
-Make sure the SSH server is running and reachable from the phone's network.
+Make sure the SSH server is running and `unison` is on the login account's
+`PATH` (the app runs `unison -server` over SSH).
 
 ## 2. Authorize the phone's public key
 
@@ -53,21 +59,28 @@ Test the login from another machine before pointing the app at it:
 ssh -p 22 user@server.example.com 'echo ok'
 ```
 
-## 3. Run the Unison socket server
+## 3. Sync
 
-Start the socket on the port UnisonDroid uses by default (`22333`):
+In UnisonDroid, create a profile with the server host, user, SSH port, and the
+remote root directory you want to sync. Leave the connection type on
+**SSH (auto-start)** — that is all you need. The first sync will ask you to
+approve the server's SSH host key fingerprint.
+
+## Optional: connect to a `unison -socket` daemon
+
+If you would rather run a persistent server (for example to avoid a process
+per sync), start it on the port UnisonDroid uses by default (`22333`):
 
 ```sh
 unison -socket 22333
 ```
 
-The socket only accepts connections that authenticate over SSH, so keep it on
-localhost or behind your normal SSH access controls. In the app's profile,
-set the **Socket port** to match.
+In the app's profile, switch the connection type to **Socket server** and set
+the **Socket port** to match. The socket only accepts connections that
+authenticate over SSH, so keep it on localhost or behind your normal SSH
+access controls.
 
-## 4. Keep it running with a systemd user unit
-
-Create `~/.config/systemd/user/unison-socket.service`:
+To keep it running, create `~/.config/systemd/user/unison-socket.service`:
 
 ```ini
 [Unit]
@@ -99,12 +112,6 @@ account:
 ```sh
 sudo loginctl enable-linger "$USER"
 ```
-
-## 5. Sync
-
-In UnisonDroid, create a profile with the server host, user, SSH port, the
-remote root directory you want to sync, and the socket port from step 3. The
-first sync will ask you to approve the server's SSH host key fingerprint.
 
 ## Locking
 

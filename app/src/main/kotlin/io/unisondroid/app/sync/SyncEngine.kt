@@ -130,6 +130,8 @@ open class SyncEngine(
                 user = p.user,
                 privateKeyPem = keys.privateKeyPem(p.sshKeyId),
                 remoteSocketPort = p.remoteSocketPort,
+                transport = p.transport,
+                serverCommand = p.serverCommand,
             )
             var hostKeyOutcome = HostKeyOutcome.APPROVED
             val decision = HostKeyDecision { fingerprint ->
