@@ -198,11 +198,19 @@ object ServiceLocator {
     @Volatile
     var profilesProvider: (Context) -> ProfileRepository = defaultProfilesProvider
 
+    val defaultKeysProvider: (Context) -> KeyVault = ::buildKeys
+
+    @Volatile
+    var keysProvider: (Context) -> KeyVault = defaultKeysProvider
+
     private var cached: SyncEngine? = null
     private var cachedProvider: ((Context) -> SyncEngine)? = null
 
     private var cachedProfiles: ProfileRepository? = null
     private var cachedProfilesProvider: ((Context) -> ProfileRepository)? = null
+
+    private var cachedKeys: KeyVault? = null
+    private var cachedKeysProvider: ((Context) -> KeyVault)? = null
 
     @Synchronized
     fun engine(context: Context): SyncEngine {
@@ -227,15 +235,31 @@ object ServiceLocator {
     }
 
     @Synchronized
+    fun keys(context: Context): KeyVault {
+        val provider = keysProvider
+        val existing = cachedKeys
+        if (existing != null && cachedKeysProvider === provider) return existing
+        val created = provider(context)
+        cachedKeys = created
+        cachedKeysProvider = provider
+        return created
+    }
+
+    @Synchronized
     fun reset() {
         cached = null
         cachedProvider = null
         cachedProfiles = null
         cachedProfilesProvider = null
+        cachedKeys = null
+        cachedKeysProvider = null
     }
 
     private fun buildProfiles(context: Context): ProfileRepository =
         ProfileRepository(JsonStore(context.filesDir))
+
+    private fun buildKeys(context: Context): KeyVault =
+        KeyVault(JsonStore(context.filesDir), KeystoreAesCipher())
 
     private fun buildEngine(context: Context): SyncEngine {
         val store = JsonStore(context.filesDir)

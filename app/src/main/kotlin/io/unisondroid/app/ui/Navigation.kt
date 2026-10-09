@@ -54,9 +54,10 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
                 },
             ),
         ) { entry ->
-            PlaceholderScreen(
-                title = "Profile editor",
-                subtitle = entry.arguments?.getString("id"),
+            val raw = entry.arguments?.getString("id")
+            ProfileEditorScreen(
+                profileId = raw?.takeIf { it.isNotEmpty() && it != "new" },
+                onSaved = { navController.popBackStack() },
             )
         }
         composable(
