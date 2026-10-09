@@ -193,8 +193,16 @@ object ServiceLocator {
     @Volatile
     var engineProvider: (Context) -> SyncEngine = defaultEngineProvider
 
+    val defaultProfilesProvider: (Context) -> ProfileRepository = ::buildProfiles
+
+    @Volatile
+    var profilesProvider: (Context) -> ProfileRepository = defaultProfilesProvider
+
     private var cached: SyncEngine? = null
     private var cachedProvider: ((Context) -> SyncEngine)? = null
+
+    private var cachedProfiles: ProfileRepository? = null
+    private var cachedProfilesProvider: ((Context) -> ProfileRepository)? = null
 
     @Synchronized
     fun engine(context: Context): SyncEngine {
@@ -208,10 +216,26 @@ object ServiceLocator {
     }
 
     @Synchronized
+    fun profiles(context: Context): ProfileRepository {
+        val provider = profilesProvider
+        val existing = cachedProfiles
+        if (existing != null && cachedProfilesProvider === provider) return existing
+        val created = provider(context)
+        cachedProfiles = created
+        cachedProfilesProvider = provider
+        return created
+    }
+
+    @Synchronized
     fun reset() {
         cached = null
         cachedProvider = null
+        cachedProfiles = null
+        cachedProfilesProvider = null
     }
+
+    private fun buildProfiles(context: Context): ProfileRepository =
+        ProfileRepository(JsonStore(context.filesDir))
 
     private fun buildEngine(context: Context): SyncEngine {
         val store = JsonStore(context.filesDir)

@@ -63,6 +63,7 @@ dependencies {
     implementation(libs.bcprov)
 
     testImplementation(platform(libs.junit.bom))
+    testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.junit4)
     testRuntimeOnly(libs.junit.platform.launcher)
@@ -70,6 +71,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.sshd.core)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
