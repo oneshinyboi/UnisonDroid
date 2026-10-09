@@ -58,7 +58,7 @@ fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
     val state by engine.state.collectAsState()
 
     LaunchedEffect(profileId) {
-        context.startService(SyncService.intent(context, profileId))
+        ContextCompat.startForegroundService(context, SyncService.intent(context, profileId))
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(

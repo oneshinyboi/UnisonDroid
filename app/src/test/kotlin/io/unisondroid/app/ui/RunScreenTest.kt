@@ -12,6 +12,7 @@ import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.service.SyncService
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.HostKeyDecision
 import io.unisondroid.app.sync.OutputParser
@@ -28,12 +29,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -115,6 +119,18 @@ class RunScreenTest {
 
         compose.onNodeWithTag(RUN_CANCEL_TAG).performClick()
         assertTrue("cancel must be forwarded to the engine", engine.cancelled)
+    }
+
+    @Test
+    fun `starts the sync service with the profile intent on entry`() {
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p42") } }
+        compose.waitForIdle()
+
+        val application = RuntimeEnvironment.getApplication()
+        val started = shadowOf(application).nextStartedService
+        assertNotNull("service must be started on entry", started)
+        assertEquals(SyncService::class.java.name, started!!.component?.className)
+        assertEquals("p42", started.getStringExtra("profileId"))
     }
 
     @Test
