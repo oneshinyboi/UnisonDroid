@@ -55,7 +55,7 @@ jobs:
             native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-
 
       - name: Cross-compile libunison.so (${{ matrix.abi }})
-        run: native/build-unison.sh ${{ matrix.abi }}
+        run: bash native/build-unison.sh ${{ matrix.abi }}
 
       - name: Upload jniLibs (${{ matrix.abi }})
         uses: actions/upload-artifact@v4
