@@ -1,0 +1,50 @@
+package io.unisondroid.app
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import io.unisondroid.app.data.JsonStore
+import io.unisondroid.app.data.KeyVault
+import io.unisondroid.app.data.KeystoreAesCipher
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+
+@RunWith(AndroidJUnit4::class)
+class KeystoreAesCipherTest {
+
+    @Test
+    fun encryptDecrypt_roundTrips() {
+        val cipher = KeystoreAesCipher()
+        val plain = "hello keystore".toByteArray() + ByteArray(32) { it.toByte() }
+        val blob = cipher.encrypt(plain)
+        assertTrue("ciphertext should include IV + tag", blob.size > plain.size)
+        assertArrayEquals(plain, cipher.decrypt(blob))
+    }
+
+    @Test
+    fun encrypt_usesFreshIvPerCall() {
+        val cipher = KeystoreAesCipher()
+        val plain = "same input".toByteArray()
+        assertFalse(cipher.encrypt(plain).contentEquals(cipher.encrypt(plain)))
+    }
+
+    @Test
+    fun keyVault_generate_privateKeyPemRoundTrips() = runBlocking {
+        val cacheDir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+        val dir = File(cacheDir, "keystore_test_${System.nanoTime()}").apply { mkdirs() }
+        val vault = KeyVault(JsonStore(dir), KeystoreAesCipher())
+
+        val key = vault.generate("e2e-key")
+        assertTrue("public key must be OpenSSH ed25519", key.publicKey.startsWith("ssh-ed25519 "))
+
+        val pem = vault.privateKeyPem(key.id)
+        assertTrue(pem.startsWith("-----BEGIN OPENSSH PRIVATE KEY-----"))
+        assertTrue(pem.trimEnd().endsWith("-----END OPENSSH PRIVATE KEY-----"))
+        assertEquals("decryption must be deterministic across reads", pem, vault.privateKeyPem(key.id))
+    }
+}

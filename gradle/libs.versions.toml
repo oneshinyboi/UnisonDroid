@@ -14,6 +14,8 @@ junitBom = "5.14.4"
 sshd = "2.20.0"
 robolectric = "4.17"
 junit4 = "4.13.2"
+androidxTestRunner = "1.5.0"
+androidxTestExtJunit = "1.1.5"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -39,6 +41,8 @@ junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher" }
 sshd-core = { group = "org.apache.sshd", name = "sshd-core", version.ref = "sshd" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

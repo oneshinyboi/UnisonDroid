@@ -39,7 +39,7 @@ class PrfGeneratorTest {
         val out = PrfGenerator.generate(profile(), localSocketPort = 22334)
 
         val lines = out.lines()
-        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(2, 5))
+        assertEquals(listOf("perms = 0", "links = false", "fat = true", "ignorelocks = true"), lines.subList(2, 6))
     }
 
     @Test
@@ -69,7 +69,7 @@ class PrfGeneratorTest {
         val p = profile(
             localRoot = "/storage/emulated/0/My Folder/中文",
             ignorePatterns = listOf("*.tmp", ".thumbnails"),
-            advancedPrefs = "fastcheck = false\nignorelocks = true\n",
+            advancedPrefs = "fastcheck = false\n",
         )
         val expected = """
             root = /storage/emulated/0/My Folder/中文
@@ -77,10 +77,10 @@ class PrfGeneratorTest {
             perms = 0
             links = false
             fat = true
+            ignorelocks = true
             ignore = Path *.tmp
             ignore = Path .thumbnails
             fastcheck = false
-            ignorelocks = true
         """.trimIndent() + "\n"
 
         assertEquals(expected, PrfGenerator.generate(p, localSocketPort = 22334))
@@ -92,7 +92,8 @@ class PrfGeneratorTest {
             "root = socket://127.0.0.1:22334\n" +
             "perms = 0\n" +
             "links = false\n" +
-            "fat = true\n"
+            "fat = true\n" +
+            "ignorelocks = true\n"
 
         assertEquals(expected, PrfGenerator.generate(profile(), localSocketPort = 22334))
     }

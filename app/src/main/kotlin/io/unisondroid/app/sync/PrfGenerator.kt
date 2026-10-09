@@ -11,6 +11,7 @@ object PrfGenerator {
         sb.append("perms = 0\n")
         sb.append("links = false\n")
         sb.append("fat = true\n")
+        sb.append("ignorelocks = true\n")
         for (pattern in profile.ignorePatterns) {
             sb.append("ignore = Path ").append(pattern).append('\n')
         }
