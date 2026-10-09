@@ -237,6 +237,20 @@ class SyncServiceTest {
         assertTrue(!shadowOf(service).isForegroundStopped)
     }
 
+    @Test
+    fun `immediate failure on a fresh service posts and stops without a preceding active state`() {
+        val service = startService()
+
+        engine.states.value = SyncState.Failed("prof1", SyncState.Reason.BINARY_MISSING, "missing")
+        pump()
+
+        val failed = notificationText()
+        assertNotNull(failed)
+        assertTrue(failed!!.contains("Sync failed"))
+        assertTrue(failed.contains("binary missing"))
+        assertTrue("an immediate failure must not wedge the service", shadowOf(service).isStoppedBySelf)
+    }
+
     private fun startService(): SyncService {
         val context = RuntimeEnvironment.getApplication() as Context
         controller = Robolectric.buildService(SyncService::class.java, SyncService.intent(context, "prof1"))
