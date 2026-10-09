@@ -2,6 +2,7 @@ package io.unisondroid.app.sync
 
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -94,6 +95,33 @@ class UnisonRunnerTest {
 
             val code = process.exitCode()
             assertTrue(code != 0, "expected nonzero exit code after kill, got $code")
+        }
+    }
+
+    @Test
+    fun `output flow completes after kill`() {
+        val binary = fakeUnison(
+            "chatty-sleepy-unison",
+            """
+            #!/bin/sh
+            echo before-kill
+            sleep 60
+            """.trimIndent(),
+        )
+
+        runBlocking {
+            val process = UnisonRunner(binary).start(env = emptyMap(), args = emptyList())
+            val lines = mutableListOf<String>()
+
+            withTimeout(10_000) {
+                process.output.collect { line ->
+                    lines += line
+                    if (line == "before-kill") process.kill()
+                }
+            }
+
+            assertEquals(listOf("before-kill"), lines)
+            assertTrue(process.exitCode() != 0, "expected nonzero exit code after kill")
         }
     }
 

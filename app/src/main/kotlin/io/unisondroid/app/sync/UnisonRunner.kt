@@ -33,19 +33,12 @@ open class UnisonRunner(private val binary: File) {
                 }
             }
         }.flowOn(Dispatchers.IO)
-        return RunningProcess(output, handleOf(process), process)
+        return RunningProcess(output, process)
     }
-
-    private fun handleOf(process: Process): ProcessHandle =
-        ProcessHandle.of(pidOf(process)).orElseThrow()
-
-    private fun pidOf(process: Process): Long =
-        Process::class.java.getMethod("pid").invoke(process) as Long
 }
 
 open class RunningProcess(
     open val output: Flow<String>,
-    private val handle: ProcessHandle,
     private val process: Process? = null,
 ) {
     open suspend fun exitCode(): Int = withContext(Dispatchers.IO) {
@@ -53,7 +46,15 @@ open class RunningProcess(
     }
 
     open fun kill() {
-        handle.descendants().forEach { it.destroyForcibly() }
-        handle.destroyForcibly()
+        val current = process ?: return
+        killDescendantsBestEffort(current)
+        current.destroyForcibly()
+    }
+
+    private fun killDescendantsBestEffort(current: Process) {
+        runCatching {
+            val handle = Process::class.java.getMethod("toHandle").invoke(current) as ProcessHandle
+            handle.descendants().forEach { it.destroyForcibly() }
+        }
     }
 }
