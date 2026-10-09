@@ -1,0 +1,4 @@
+Fix "lost connection with the server" when syncing over SSH.
+
+- The SSH relay now flushes after every write, so the Unison handshake
+  reaches the remote server immediately instead of being buffered.
