@@ -1,0 +1,6 @@
+Fix syncing over SSH (the "lost connection with the server" error).
+
+- The profile's remote root is now included in the sync target; previously
+  the server path was ignored, which stalled the connection.
+- The SSH relay no longer uses a socket type that Android serializes,
+  which was deadlocking the handshake.
