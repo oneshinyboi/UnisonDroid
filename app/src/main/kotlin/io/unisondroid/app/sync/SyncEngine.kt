@@ -58,6 +58,7 @@ open class SyncEngine(
     private val unisonDir: File,
     private val clock: Clock,
     private val hostKeyDecisionTimeoutMs: Long = HOST_KEY_DECISION_TIMEOUT_MS,
+    private val tunnelCloseGraceMs: Long = TUNNEL_CLOSE_GRACE_MS,
 ) {
     private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -232,8 +233,15 @@ open class SyncEngine(
                 }
                 val watcher = launch {
                     opened.awaitClosed()
-                    settled.complete(null)
-                    proc.kill()
+                    // The remote unison -server exits first on a normal
+                    // completion, closing the relay while the local process is
+                    // still flushing archives; only treat the closed tunnel as
+                    // fatal if the process fails to exit on its own in time.
+                    val exited = withTimeoutOrNull(tunnelCloseGraceMs) { settled.await() }
+                    if (exited == null) {
+                        settled.complete(null)
+                        proc.kill()
+                    }
                 }
                 val code = settled.await()
                 collector.cancelAndJoin()
@@ -305,6 +313,7 @@ open class SyncEngine(
         const val LOG_MAX_LINES = 2000
         const val DETAIL_TAIL_LINES = 20
         const val HOST_KEY_DECISION_TIMEOUT_MS = 300_000L
+        const val TUNNEL_CLOSE_GRACE_MS = 10_000L
         const val EXIT_UNKNOWN = -1
         const val LINE_FEED = "\n"
         const val PERMISSION_DENIED_MARKER = "Permission denied"

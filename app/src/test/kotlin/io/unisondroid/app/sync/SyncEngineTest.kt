@@ -274,6 +274,26 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `tunnel closing just before unison exits does not fail the sync`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE), gateAfter = 1, gate = gate)),
+        )
+        val job = launch { h.engine.requestSync("prof1") }
+        awaitState(h.engine) { it is SyncState.Syncing }
+
+        h.tunnel.handles.single().closedOrDead.complete(Unit)
+        runCurrent()
+        gate.complete(Unit)
+        withTimeout(10_000) { job.join() }
+
+        val state = h.engine.state.value
+        assertTrue(state is SyncState.Finished, "state was: $state")
+        assertFalse(h.runner.processes.single().killed, "a cleanly exiting process must not be killed")
+        h.tunnel.assertAllClosed()
+    }
+
+    @Test
     fun `binary missing fails with BINARY_MISSING before any IO`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
@@ -421,6 +441,7 @@ class SyncEngineTest {
         binaryAvailable: Boolean = true,
         tunnelPark: CompletableDeferred<Unit>? = null,
         hostKeyDecisionTimeoutMs: Long = 300_000L,
+        tunnelCloseGraceMs: Long = 50L,
         onStart: ((Map<String, String>, List<String>) -> Unit)? = null,
     ): Harness {
         if (binaryAvailable) {
@@ -450,6 +471,7 @@ class SyncEngineTest {
             unisonDir = unisonDir,
             clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
             hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
+            tunnelCloseGraceMs = tunnelCloseGraceMs,
         )
         return Harness(engine, repo, vault, hostKeys, tunnel, runner, events, profiles, key.id)
     }
