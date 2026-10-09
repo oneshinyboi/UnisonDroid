@@ -29,6 +29,8 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
             ProfilesScreen(
                 onOpenProfile = { id -> navController.navigate(Routes.editor(id)) },
                 onStartSync = { id -> navController.navigate(Routes.run(id)) },
+                onOpenKeys = { navController.navigate(Routes.KEYS) },
+                onOpenAbout = { navController.navigate(Routes.ABOUT) },
             )
         }
         composable(

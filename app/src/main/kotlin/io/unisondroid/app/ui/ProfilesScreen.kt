@@ -17,6 +17,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +37,8 @@ import java.time.format.DateTimeFormatter
 const val GETTING_STARTED_TAG = "gettingStartedCard"
 const val PROFILE_ROW_TAG = "profileRow"
 const val LAST_SYNC_TAG = "lastSync"
+const val PROFILES_KEYS_ACTION_TAG = "profiles-keys-action"
+const val PROFILES_ABOUT_ACTION_TAG = "profiles-about-action"
 
 private val LAST_SYNC_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
@@ -47,6 +50,8 @@ internal fun lastSyncLabel(at: Long?): String =
 fun ProfilesScreen(
     onOpenProfile: (String?) -> Unit,
     onStartSync: (String) -> Unit,
+    onOpenKeys: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -58,6 +63,8 @@ fun ProfilesScreen(
         profiles = profiles,
         onOpenProfile = onOpenProfile,
         onStartSync = onStartSync,
+        onOpenKeys = onOpenKeys,
+        onOpenAbout = onOpenAbout,
         modifier = modifier,
     )
 }
@@ -68,11 +75,27 @@ internal fun ProfilesContent(
     profiles: List<Profile>?,
     onOpenProfile: (String?) -> Unit,
     onStartSync: (String) -> Unit,
+    onOpenKeys: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { TopAppBar(title = { Text(text = "UnisonDroid") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(text = "UnisonDroid") },
+                actions = {
+                    TextButton(
+                        onClick = onOpenKeys,
+                        modifier = Modifier.testTag(PROFILES_KEYS_ACTION_TAG),
+                    ) { Text("Keys") }
+                    TextButton(
+                        onClick = onOpenAbout,
+                        modifier = Modifier.testTag(PROFILES_ABOUT_ACTION_TAG),
+                    ) { Text("About") }
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { onOpenProfile(null) }) {
                 Text(text = "New profile")
