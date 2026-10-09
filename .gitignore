@@ -11,6 +11,12 @@ captures/
 # Local configuration (SDK path, etc.)
 local.properties
 
+# Secrets — signing keystore and its env file
+.keyenv
+*.jks
+*.keystore
+*.p12
+
 # Worktrees & superpowers scratch
 .worktrees/
 .superpowers/

@@ -21,10 +21,15 @@ android {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
             if (keystorePath != null) {
-                storeFile = file(keystorePath)
+                // Resolve relative paths against the repository root, so
+                // KEYSTORE_PATH=release.jks works from the project root.
+                storeFile = rootProject.file(keystorePath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+                // PKCS12 keystores use one password for the store and the key;
+                // fall back to the store password when KEY_PASSWORD is unset.
+                keyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
+                System.getenv("KEYSTORE_TYPE")?.let { storeType = it }
             }
         }
     }
