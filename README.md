@@ -15,20 +15,23 @@ Requirements:
 - JDK 21
 - Android SDK with platform 36 (set `sdk.dir` in `local.properties` or export
   `ANDROID_HOME` / `ANDROID_SDK_ROOT`)
-- Android NDK `29.0.14206865` (only needed to build the bundled Unison binary)
+- Android NDK `29.0.14206865` (only needed to build the bundled native binaries)
 - A Linux host with OCaml build prerequisites (`gcc`, `make`, `curl`, `git`) to
-  cross-compile Unison
+  cross-compile Unison, and `perl` for the OpenSSL/OpenSSH build
 
-The app embeds a cross-compiled `unison` binary in
-`app/src/main/jniLibs/<abi>/libunison.so`. That directory is gitignored, so a
+The app embeds a cross-compiled `unison` binary plus the OpenSSH client tools
+in `app/src/main/jniLibs/<abi>/` (`libunison.so`, `libssh.so`,
+`libssh-keygen.so`, `libssh-keyscan.so`). That directory is gitignored, so a
 clean checkout has to build it first:
 
 ```sh
 native/build-unison.sh arm64-v8a
 native/build-unison.sh x86_64
+native/build-openssh.sh arm64-v8a
+native/build-openssh.sh x86_64
 ```
 
-Each run installs the result into `app/src/main/jniLibs/<abi>/`. Then build the
+Each run installs the results into `app/src/main/jniLibs/<abi>/`. Then build the
 app:
 
 ```sh

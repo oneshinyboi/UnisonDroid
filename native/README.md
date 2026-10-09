@@ -1,8 +1,13 @@
-# Native Unison build
+# Native builds
 
 `build-unison.sh` cross-compiles the [Unison](https://github.com/bcpierce00/unison)
 file synchronizer for Android and writes a static binary that the app ships as
 `libunison.so`.
+
+`build-openssh.sh` cross-compiles OpenSSH (the `ssh`, `ssh-keygen` and
+`ssh-keyscan` client tools) against a statically linked OpenSSL and ships them
+as `libssh.so`, `libssh-keygen.so` and `libssh-keyscan.so`. The app uses these
+for unison's native `ssh://` transport.
 
 ## Output
 
@@ -65,6 +70,7 @@ hand:
 for abi in arm64-v8a x86_64; do
   mkdir -p app/src/main/jniLibs/$abi
   cp native/out/$abi/libunison.so app/src/main/jniLibs/$abi/
+  cp native/out/$abi/libssh*.so app/src/main/jniLibs/$abi/
 done
 ```
 
@@ -76,6 +82,48 @@ Then build and install the app:
 
 When the binary is present, `BinaryLocator.locate()` returns
 `BinaryStatus.Available` and the About screen shows the pinned version.
+
+## OpenSSH (`build-openssh.sh`)
+
+For each ABI the script produces:
+
+```
+native/out/<abi>/libssh.so          # ssh client (unison's remote shell)
+native/out/<abi>/libssh-keygen.so   # ssh-keygen (generation, -y, -lf)
+native/out/<abi>/libssh-keyscan.so  # ssh-keyscan (TOFU host-key discovery)
+```
+
+Supported ABIs: `arm64-v8a`, `x86_64`. Usage:
+
+```sh
+native/build-openssh.sh arm64-v8a
+native/build-openssh.sh x86_64
+```
+
+Useful environment variables:
+
+| Variable             | Meaning                                                    |
+| -------------------- | ---------------------------------------------------------- |
+| `ANDROID_SDK_ROOT`   | Android SDK location (default `~/Android/Sdk`)             |
+| `OPENSSH_BUILD_DIR`  | Scratch/cache directory (default `native/.build/openssh`)  |
+| `FORCE=1`            | Rebuild even if the output already exists                  |
+| `JOBS`               | Parallel `make` jobs (default: `nproc`)                    |
+
+Pinned versions are at the top of the script: OpenSSH `10.2p1`, OpenSSL
+`3.5.9`, NDK `29.0.14206865`, `ANDROID_API=26` (matches the app's `minSdk`).
+The script writes the three binaries into `app/src/main/jniLibs/<abi>/` (and
+re-copies them on no-op runs), alongside `libunison.so`.
+
+Building against bionic needs a few adaptations, all in the script:
+
+- Define `HAVE_ATTRIBUTE__SENTINEL__` (cross-configure leaves it unset, so
+  `defines.h` would stub `__sentinel__` empty and break bionic's `unistd.h`).
+- Seed `ac_cv_func_bzero=yes` and force-include `<strings.h>` (bionic declares
+  `bzero` only there and as an overloadable macro).
+- Reroute `explicit_bzero`'s volatile-pointer trick through a `memset` wrapper
+  (bionic `bzero`/`memset` are macros / overloadable, not addressable).
+- Stub `getrrsetbyname` (bionic has no resolver internals; DNS host-key
+  verification is never enabled).
 
 ## How it works
 

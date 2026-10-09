@@ -76,8 +76,9 @@ Submit an inclusion request (merge request / issue) to
 - [ ] No Google Play Services, Firebase, crash reporting, ads, or analytics.
 - [ ] Reproducible-ish build works in F-Droid's buildserver: pure Gradle, no
       prebuilt native libraries that are not built from source in CI. The
-      `libunison.so` binaries are **not** committed (see `.gitignore`); the
-      buildserver runs `native/build-unison.sh` for `arm64-v8a` and `x86_64`.
+      `libunison.so` and `libssh*.so` binaries are **not** committed (see
+      `.gitignore`); the buildserver runs `native/build-unison.sh` and
+      `native/build-openssh.sh` for `arm64-v8a` and `x86_64`.
 - [ ] `gradle/wrapper/gradle-wrapper.properties` pins a Gradle distribution with
       a `distributionSha256Sum`.
 - [ ] `versionCode` / `versionName` are set and match the tag being released.
@@ -88,7 +89,8 @@ Submit an inclusion request (merge request / issue) to
 - [ ] The application id (`io.unisondroid.app`) is final; F-Droid cannot change
       it later.
 - [ ] A `Builds:` recipe for the metadata uses `subdir`/`gradle` correctly and
-      declares `ndk: 29.0.14206865` plus the native step if needed.
+      declares `ndk: 29.0.14206865` plus the native steps (`build-unison.sh`
+      and `build-openssh.sh`) if needed.
 - [ ] Follow-up: confirm the acknowledged `AntiFeatures` (if any) and add
       `Unstable`/`Beta` tags only if appropriate.
 

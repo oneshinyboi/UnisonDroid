@@ -61,7 +61,8 @@ unison's. ssh is its child; the existing `killDescendantsBestEffort` in
 Cross-compile OpenSSH portable (pin `OPENSSH_VERSION=10.2p1`, the line
 validated against during this design's device testing) for arm64-v8a and x86_64 using the existing NDK pipeline from
 `build-unison.sh` (NDK 29, API 26, clang, static bionic). Link OpenSSL
-statically (pin latest 3.x LTS). Outputs `native/out/<abi>/libssh.so` and
+statically (`OPENSSL_VERSION=3.5.9`, matching the validated server). Outputs
+`native/out/<abi>/libssh.so` and
 `libssh-keyscan.so` (ssh-keygen is produced by the same build and also shipped
 as `libssh-keygen.so`; used by `SshTool`).
 
@@ -69,7 +70,8 @@ Follows the established trick: executables named `lib*.so` in
 `app/src/main/jniLibs/` are extracted to `nativeLibraryDir` and executed via
 absolute path.
 
-Size: ~2-3MB per ABI; offset by dropping sshj + bcprov dex.
+Size: ~16MB per ABI for the three static binaries (~5-6MB each); offset by
+dropping sshj + bcprov dex.
 
 ### 2. Runtime SSH layout
 
@@ -89,8 +91,9 @@ so ssh never consults `$HOME`, `/etc/ssh`, or passwd.
 
 ```
 root = <localRoot>
-root = ssh://<user>@<host><remoteRoot>
-ssh = <nativeLibraryDir>/libssh.so -i <keyfile> -o UserKnownHostsFile=<path> -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -p <sshPort>
+root = ssh://<user>@<host>/<remoteRoot>      (remoteRoot begins with "/", giving the //abs/path form)
+sshcmd = <nativeLibraryDir>/libssh.so
+sshargs = -F none -i <keyfile> -o UserKnownHostsFile=<path> -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -p <sshPort>
 perms = 0
 links = false
 fat = true
@@ -114,7 +117,7 @@ fails the connection and is mapped to a TUNNEL failure. Scanning is only
 needed for first contact. Before starting unison:
 
 - `HostKeyStore.known(host, port)` is null -> scan with
-  `libssh-keyscan.so -T 5 -t ed25519,ecdsa-sha2-nistp256,rsa-sha2-256,rsa-sha2-512`,
+  `libssh-keyscan.so -T 5 -t ed25519,ecdsa,rsa`,
   compute fingerprints with `libssh-keygen.so -lf`, emit `AwaitingHostKey`
   (reuse existing state and UI). On approve: write the `known_hosts` entry
   and `HostKeyStore`. On decline/timeout: fail with the existing semantics
@@ -155,7 +158,7 @@ ssh failures surface through unison's output/stderr and exit codes:
 ### 8. Testing
 
 - Unit (JVM): `SshTool` fakes; TOFU gate state transitions; PrfGenerator
-  output (exact ssh line, ssh:// root quoting); error-mapping table.
+  output (exact sshcmd/sshargs lines, ssh:// root quoting); error-mapping table.
 - Delete `SshTunnelTest` and the Apache MINA sshd test harness.
 - Instrumented (androidTest): real binaries on device — `ssh -V` smoke test,
   keygen/derive round-trip, and the real-server e2e profile

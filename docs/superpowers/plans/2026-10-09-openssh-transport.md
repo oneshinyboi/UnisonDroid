@@ -4,7 +4,7 @@
 
 **Goal:** Replace the in-process sshj relay with bundled OpenSSH driven by unison's native `ssh://` roots, deleting the tunnel layer and the sshj/bcprov dependencies.
 
-**Architecture:** Cross-compile OpenSSH portable + static OpenSSL with the existing NDK pipeline and ship `ssh`/`ssh-keygen`/`ssh-keyscan` as `lib*.so` executables in jniLibs. Profiles emit `root = ssh://user@host/path` plus an `ssh =` command line; unison spawns and manages ssh itself. A proactive TOFU gate (keyscan → prompt → app-owned known_hosts) runs before the sync; the engine's tunnel machinery, relay, and watcher disappear.
+**Architecture:** Cross-compile OpenSSH portable + static OpenSSL with the existing NDK pipeline and ship `ssh`/`ssh-keygen`/`ssh-keyscan` as `lib*.so` executables in jniLibs. Profiles emit `root = ssh://user@host//path` plus `sshcmd`/`sshargs`; unison spawns and manages ssh itself. A proactive TOFU gate (keyscan → prompt → app-owned known_hosts) runs before the sync; the engine's tunnel machinery, relay, and watcher disappear.
 
 **Tech Stack:** Kotlin, OpenSSH portable 10.2p1, OpenSSL 3.5.x (static), Android NDK 29.0.14206865 (API 26), Gradle version catalog.
 
@@ -25,7 +25,7 @@
 2. **Lost/corrupt known_hosts while HostKeyStore says approved**: ssh fails, engine maps "Host key verification failed" to TUNNEL, no crash — Task 6 test `host key verification failure maps to TUNNEL`.
 3. **Passphrase-protected or malformed PEM import**: rejected with `KeyVaultException`, not a hang or crash — Task 3 test `import rejects key keygen cannot read`.
 4. **Spaces/unicode in roots** (`/home/Diamond/my folder ♥`): prf lines still parse — Task 4 test `roots with spaces and unicode are emitted verbatim`.
-5. **Non-22 SSH port**: port appears only as `-p` in the ssh line and in keyscan, never in the `ssh://` root — Task 4 and Task 5 port assertions.
+5. **Non-22 SSH port**: port appears only as `-p` in `sshargs` and in keyscan, never in the `ssh://` root — Task 4 and Task 5 port assertions.
 
 ---
 
@@ -127,7 +127,7 @@ git add app/src/main/kotlin/io/unisondroid/app/sync/SshTool.kt app/src/main/kotl
 git commit -m "feat: generate and validate ssh keys via bundled keygen (drop bcprov from keyvault)"
 ```
 
-### Task 3: PrfGenerator emits `ssh://` root + `ssh =` command
+### Task 3: PrfGenerator emits `ssh://` root + `sshcmd`/`sshargs`
 
 **Files:**
 - Modify: `app/src/main/kotlin/io/unisondroid/app/sync/PrfGenerator.kt`
@@ -154,8 +154,8 @@ object PrfGenerator {
 - [ ] **Step 1: Write failing tests**
 
 Assert exact emitted lines for a profile with `user=Diamond host=veryshiny.net sshPort=2222 remoteRoot=/home/Diamond/unisondroid-e2e serverCommand=unison`:
-`root = <localRoot>`, `root = ssh://Diamond@veryshiny.net/home/Diamond/unisondroid-e2e`, and the ssh line
-`ssh = <binary> -F none -i <keyFile> -o UserKnownHostsFile=<knownHosts> -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -p 2222` (spaces in file paths must remain unquoted — unison quotes the whole line when invoking the shell). Additional tests: `servercmd` line emitted only when `serverCommand != "unison"` (`servercmd = /usr/local/bin/unison`); `roots with spaces and unicode are emitted verbatim` (localRoot `/storage/emulated/0/my folder ♥`, remoteRoot `/home/Diamond/my folder ♥`); no `socket://` root anywhere; default port 22 appears only as `-p 22`.
+`root = <localRoot>`, `root = ssh://Diamond@veryshiny.net//home/Diamond/unisondroid-e2e` (double slash before the absolute remote path), and
+`sshcmd = <binary>` with `sshargs = -F none -i <keyFile> -o UserKnownHostsFile=<knownHosts> -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -p 2222` (spaces in file paths must remain unquoted — unison quotes the whole line when invoking the shell). Additional tests: `servercmd` line emitted only when `serverCommand != "unison"` (`servercmd = /usr/local/bin/unison`); `roots with spaces and unicode are emitted verbatim` (localRoot `/storage/emulated/0/my folder ♥`, remoteRoot `/home/Diamond/my folder ♥`); no `socket://` root anywhere; default port 22 appears only as `-p 22`.
 
 - [ ] **Step 2: Run, verify failure**
 
@@ -265,7 +265,7 @@ open class SyncEngine(
 
 - [ ] **Step 1: Rewrite SyncEngineTest with the new seams**
 
-Keep adapted versions of: stale-lock clearing, happy path ordering (tunnel-open event becomes gate Trusted; assert prf content contains the ssh line and `ssh://` root; assert key file existed at runner start and is deleted after), unknown-host-key pause/approve/decline/timeout (via fake gate `prompt` suspension, no tunnel), cancel, binary missing (now also when `libssh.so` absent), nonzero exit mapping, version mismatch, local permissions, auth-marker mapping (`Permission denied (publickey...` in output → AUTH), `host key verification failure maps to TUNNEL`, `lost connection output maps to TUNNEL`, log cap, lastResult persistence. Delete all tunnel/watcher tests, `FakeTunnel`/`FakeHandle`, and `tunnelCloseGraceMs`.
+Keep adapted versions of: stale-lock clearing, happy path ordering (tunnel-open event becomes gate Trusted; assert prf content contains the sshargs line and `ssh://` root; assert key file existed at runner start and is deleted after), unknown-host-key pause/approve/decline/timeout (via fake gate `prompt` suspension, no tunnel), cancel, binary missing (now also when `libssh.so` absent), nonzero exit mapping, version mismatch, local permissions, auth-marker mapping (`Permission denied (publickey...` in output → AUTH), `host key verification failure maps to TUNNEL`, `lost connection output maps to TUNNEL`, log cap, lastResult persistence. Delete all tunnel/watcher tests, `FakeTunnel`/`FakeHandle`, and `tunnelCloseGraceMs`.
 
 - [ ] **Step 2: Run, verify failure** — `./gradlew :app:testDebugUnitTest --tests "io.unisondroid.app.sync.SyncEngineTest"` → FAIL (constructor mismatch).
 
