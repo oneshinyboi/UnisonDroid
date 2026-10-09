@@ -1,0 +1,4 @@
+Fix SSH connection failing with "no such algorithm X25519 for provider BC".
+
+- Install the app's bundled modern BouncyCastle under the "BC" provider name
+  before connecting, replacing Android's older built-in one that lacks X25519.
