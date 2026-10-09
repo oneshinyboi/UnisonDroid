@@ -397,7 +397,7 @@ class SyncEngineTest {
             runnerFactory = { _ -> runner },
             parserFactory = { OutputParser() },
             unisonDir = unisonDir,
-            clock = Clock.fixed(Instant.ofEpochMillis(FIXED_NOW_MILLIS), ZoneOffset.UTC),
+            clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
         )
         return Harness(engine, repo, vault, hostKeys, tunnel, runner, events, profiles, key.id)
     }
@@ -437,13 +437,6 @@ class SyncEngineTest {
         val gateAfter: Int = -1,
         val gate: CompletableDeferred<Unit>? = null,
     )
-
-    private fun scriptedOutput(script: ScriptedProcess): Flow<String> = flow {
-        script.lines.forEachIndexed { index, line ->
-            emit(line)
-            if (index + 1 == script.gateAfter) script.gate?.await()
-        }
-    }
 
     private class FakeRunningProcess(val script: ScriptedProcess) : RunningProcess(scriptedOutput(script)) {
         var killed = false
@@ -521,5 +514,12 @@ class SyncEngineTest {
         val PROGRESS_LINE = "[wnt] ...  5/10 KiB  photos/vacation.jpg"
         val SUMMARY_LINE = "Synchronization complete at 21:33:33  (2 items transferred, 0 skipped, 0 failed)"
         val FAKE_BINARY = File("/nowhere/libunison.so")
+
+        fun scriptedOutput(script: ScriptedProcess): Flow<String> = flow {
+            script.lines.forEachIndexed { index, line ->
+                emit(line)
+                if (index + 1 == script.gateAfter) script.gate?.await()
+            }
+        }
     }
 }
