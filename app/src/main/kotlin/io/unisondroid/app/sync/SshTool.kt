@@ -1,7 +1,9 @@
 package io.unisondroid.app.sync
 
 import java.io.File
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 data class GeneratedKey(
     val privatePem: String,
@@ -33,6 +35,7 @@ class ProcessSshTool(
     private val keygen: File,
     private val keyscan: File,
     private val workDir: File,
+    private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
 ) : SshTool {
 
     override fun generateKey(comment: String): GeneratedKey {
@@ -77,48 +80,76 @@ class ProcessSshTool(
         return output.lineSequence()
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .map { line ->
-                val fingerprintLine = pipeToFingerprint(line)
-                // "<bits> SHA256:<b64> <type> (comment)"
-                val parts = fingerprintLine.trim().split(" ")
                 HostKeyEntry(
                     knownHostsLine = line,
-                    keyType = parts.getOrNull(2) ?: line.split(" ").getOrNull(1) ?: "unknown",
-                    fingerprint = parts.getOrNull(1) ?: "",
+                    // The line is "[host]:port <key-algo> <blob> [comment]".
+                    keyType = line.split(" ").getOrNull(1) ?: "unknown",
+                    fingerprint = fingerprint(line),
                 )
             }
             .toList()
     }
 
-    private fun pipeToFingerprint(knownHostsLine: String): String {
-        val process = ProcessBuilder(listOf(keygen.absolutePath, "-lf", "-"))
-            .start()
-        process.outputStream.use { it.write(knownHostsLine.toByteArray()) }
-        val out = process.inputStream.bufferedReader().readText()
-        val err = process.errorStream.bufferedReader().readText()
-        process.waitFor(PROCESS_TIMEOUT_S, TimeUnit.SECONDS)
-        if (process.exitValue() != 0 || out.isBlank()) {
-            throw SshToolException("ssh-keygen could not fingerprint scanned key: ${err.trim()}")
+    private fun fingerprint(knownHostsLine: String): String {
+        val process = ProcessBuilder(listOf(keygen.absolutePath, "-lf", "-")).start()
+        process.outputStream.use { it.write((knownHostsLine + "\n").toByteArray()) }
+        val drained = drain(process, "ssh-keygen", "fingerprinting the scanned key")
+        if (process.exitValue() != 0 || drained.out.isBlank()) {
+            throw SshToolException("ssh-keygen could not fingerprint the scanned key: ${drained.err.trim()}")
         }
-        return out
+        // "<bits> SHA256:<b64> <comment> (<type>)"
+        return drained.out.trim().split(" ").getOrNull(1) ?: ""
     }
 
     private fun run(command: List<String>): String {
-        val process = ProcessBuilder(command).start()
-        val out = process.inputStream.bufferedReader().readText()
-        val err = process.errorStream.bufferedReader().readText()
-        val finished = process.waitFor(PROCESS_TIMEOUT_S, TimeUnit.SECONDS)
+        val process = ProcessBuilder(command)
+            .redirectInput(ProcessBuilder.Redirect.from(File(DEV_NULL)))
+            .start()
+        val drained = drain(process, command.first(), "running ${command.drop(1).joinToString(" ")}")
+        if (process.exitValue() != 0) {
+            throw SshToolException(
+                "${command.first()} failed (exit ${process.exitValue()}): ${drained.err.trim().ifEmpty { drained.out.trim() }}",
+            )
+        }
+        return drained.out
+    }
+
+    private data class Drained(val out: String, val err: String)
+
+    /**
+     * Drains stdout and stderr concurrently (so a chatty child cannot fill a
+     * pipe buffer and deadlock) and kills the child if it outlives the timeout
+     * (so a passphrase prompt or a stuck tool cannot hang the caller).
+     */
+    private fun drain(process: Process, tool: String, action: String): Drained {
+        val outBuf = StringBuilder()
+        val errBuf = StringBuilder()
+        val outThread = thread { process.inputStream.drainInto(outBuf) }
+        val errThread = thread { process.errorStream.drainInto(errBuf) }
+        val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         if (!finished) {
             process.destroyForcibly()
-            throw SshToolException("timed out: ${command.first()}")
+            outThread.join(THREAD_JOIN_MS)
+            errThread.join(THREAD_JOIN_MS)
+            throw SshToolException("$tool timed out $action")
         }
-        if (process.exitValue() != 0) {
-            throw SshToolException("${command.first()} failed (exit ${process.exitValue()}): ${err.trim().ifEmpty { out.trim() }}")
+        outThread.join(THREAD_JOIN_MS)
+        errThread.join(THREAD_JOIN_MS)
+        return Drained(outBuf.toString(), errBuf.toString())
+    }
+
+    private fun InputStream.drainInto(target: StringBuilder) {
+        runCatching {
+            bufferedReader().use { reader ->
+                reader.forEachLine { target.append(it).append('\n') }
+            }
         }
-        return out
     }
 
     private companion object {
         const val KEY_PREFIX = "unisondroid-key-"
-        const val PROCESS_TIMEOUT_S = 15L
+        const val DEFAULT_TIMEOUT_MS = 15_000L
+        const val THREAD_JOIN_MS = 2_000L
+        const val DEV_NULL = "/dev/null"
     }
 }

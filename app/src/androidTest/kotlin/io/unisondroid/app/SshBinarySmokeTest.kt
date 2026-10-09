@@ -63,4 +63,30 @@ class SshBinarySmokeTest {
         val failure = runCatching { tool().derivePublicKey("this is not a key") }
         assertTrue("expected SshToolException, got: $failure", failure.exceptionOrNull() is SshToolException)
     }
+
+    @Test
+    fun derive_rejects_a_passphrase_protected_key_without_hanging() {
+        val start = System.currentTimeMillis()
+
+        val failure = runCatching { tool().derivePublicKey(PASSPHRASE_PROTECTED_PEM) }
+
+        assertTrue("expected SshToolException, got: $failure", failure.exceptionOrNull() is SshToolException)
+        assertTrue(
+            "must not hang; took ${System.currentTimeMillis() - start}ms",
+            System.currentTimeMillis() - start < 60_000,
+        )
+    }
+
+    private companion object {
+        val PASSPHRASE_PROTECTED_PEM = """
+            -----BEGIN OPENSSH PRIVATE KEY-----
+            b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABCJAX9fo+
+            4dQMo8KV9ADhqMAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIKK80A+mMiNSXmg6
+            EQIIYUMXpsB61r4iUaDGSvvXifrVAAAAkPWQ4wVo24uVqr4epIXklNOBBschVLoN9Uwg0c
+            Dvy5CkRoDbvcnzzhKlFbvpLI8ZK/ryviAjgpZHjsoyRw9DJS5t8VsezYewRutRu6ZLNvr4
+            YnBFVjoDl0lD7ktMQ2SWXLhARwoU7e7HRW7TH8hLNawyFMCEDRUFm9BdNuc2ME8ZmuW9u4
+            /gttX5+pHF1qhZeQ==
+            -----END OPENSSH PRIVATE KEY-----
+        """.trimIndent() + "\n"
+    }
 }

@@ -18,6 +18,7 @@ env:
   NDK_VERSION: "29.0.14206865"
   OCAML_VERSION: "4.14.2"
   UNISON_VERSION: "v2.53.8"
+  OPENSSH_VERSION: "10.2p1"
 
 jobs:
   native:
@@ -43,19 +44,30 @@ jobs:
           packages: "ndk;${{ env.NDK_VERSION }}"
 
       # Cache the pinned NDK and the host+cross OCaml toolchain together.
-      # The key changes when any pin changes or build-unison.sh is edited.
+      # The key changes when any pin changes or a native build script is edited.
       - name: Cache NDK and OCaml toolchain
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
             native/.build
-          key: native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-${{ hashFiles('native/build-unison.sh') }}
+          key: native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-openssh${{ env.OPENSSH_VERSION }}-${{ hashFiles('native/build-unison.sh', 'native/build-openssh.sh') }}
           restore-keys: |
-            native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-
+            native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-openssh${{ env.OPENSSH_VERSION }}-
 
       - name: Cross-compile libunison.so (${{ matrix.abi }})
         run: bash native/build-unison.sh ${{ matrix.abi }}
+
+      - name: Cross-compile openssh (${{ matrix.abi }})
+        run: bash native/build-openssh.sh ${{ matrix.abi }}
+
+      - name: Verify bundled native binaries (${{ matrix.abi }})
+        run: |
+          set -euo pipefail
+          d=app/src/main/jniLibs/${{ matrix.abi }}
+          for b in libunison.so libssh.so libssh-keygen.so libssh-keyscan.so; do
+            test -f "$d/$b" || { echo "::error::missing $d/$b"; exit 1; }
+          done
 
       - name: Upload jniLibs (${{ matrix.abi }})
         uses: actions/upload-artifact@v4
