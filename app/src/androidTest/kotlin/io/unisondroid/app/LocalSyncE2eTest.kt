@@ -2,8 +2,10 @@ package io.unisondroid.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.BinaryStatus
+import io.unisondroid.app.sync.PrfGenerator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,7 +32,11 @@ class LocalSyncE2eTest {
         val rootA = File(base, "a").apply { mkdirs() }
         val rootB = File(base, "b").apply { mkdirs() }
         val profileDir = File(base, "unison").apply { mkdirs() }
-        writeProfile(profileDir, PROFILE, rootA, rootB)
+        val generated = writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
+        assertTrue(
+            "production profile must disable unison's hard-link archive lock, got:\n$generated",
+            generated.contains("ignorelocks = true"),
+        )
 
         File(rootA, "hello.txt").writeText("hello world")
         File(rootA, "sub").mkdirs()
@@ -76,13 +82,13 @@ class LocalSyncE2eTest {
     }
 
     @Test
-    fun fatStyleMtimeTolerance_doesNotTransferOnOneSecondSkew() {
+    fun mtimeOnlySkew_causesNoTransferOnResync() {
         val binary = locateBinary()
         val base = newBaseDir()
         val rootA = File(base, "a").apply { mkdirs() }
         val rootB = File(base, "b").apply { mkdirs() }
         val profileDir = File(base, "unison").apply { mkdirs() }
-        writeProfile(profileDir, PROFILE, rootA, rootB)
+        writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
 
         val fileA = File(rootA, "stamp.txt")
         fileA.writeText("stable content")
@@ -100,10 +106,10 @@ class LocalSyncE2eTest {
         val second = runUnison(binary, profileDir)
         assertEquals("mtime-skew re-sync failed:\n${second.output}", 0, second.exit)
         assertEquals("contents must remain mirrored", snapshot(rootA), snapshot(rootB))
-        assertEquals("B must not be rewritten by a 1s mtime skew", bBefore, snapshot(rootB))
-        assertEquals("B mtime must be untouched", bMtime, fileB.lastModified())
+        assertEquals("B must not be rewritten by an mtime-only change", bBefore, snapshot(rootB))
+        assertEquals("B mtime must be untouched (times = false)", bMtime, fileB.lastModified())
         assertTrue(
-            "1s mtime skew should transfer nothing, got:\n${second.output}",
+            "an mtime-only change must transfer nothing, got:\n${second.output}",
             second.output.contains("Nothing to do"),
         )
     }
@@ -118,16 +124,29 @@ class LocalSyncE2eTest {
     private fun newBaseDir(): File =
         File(cacheDir, "e2e_${System.nanoTime()}").apply { mkdirs() }
 
-    private fun writeProfile(profileDir: File, name: String, rootA: File, rootB: File) {
-        val prf = buildString {
-            append("root = ").append(rootA.absolutePath).append('\n')
-            append("root = ").append(rootB.absolutePath).append('\n')
-            append("fat = true\n")
-            append("perms = 0\n")
-            append("links = false\n")
-            append("ignorelocks = true\n")
-        }
-        File(profileDir, "$name.prf").writeText(prf)
+    private fun writeGeneratedProfile(
+        profileDir: File,
+        name: String,
+        rootA: File,
+        rootB: File,
+    ): String {
+        val profile = Profile(
+            id = "e2e",
+            name = "e2e",
+            localRoot = rootA.absolutePath,
+            remoteRoot = rootB.absolutePath,
+            host = "localhost",
+            user = "e2e",
+            sshKeyId = "e2e",
+        )
+        val generated = PrfGenerator.generate(profile, localSocketPort = SOCKET_PORT)
+        val localLocal = generated.replace(
+            "root = socket://127.0.0.1:$SOCKET_PORT",
+            "root = ${rootB.absolutePath}",
+        )
+        check(localLocal != generated) { "PrfGenerator no longer emits the expected socket root" }
+        File(profileDir, "$name.prf").writeText(localLocal)
+        return localLocal
     }
 
     private data class RunResult(val exit: Int, val output: String)
@@ -160,5 +179,6 @@ class LocalSyncE2eTest {
 
     private companion object {
         const val PROFILE = "e2e"
+        const val SOCKET_PORT = 22334
     }
 }

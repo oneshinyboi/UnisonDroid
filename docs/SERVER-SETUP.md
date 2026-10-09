@@ -105,3 +105,14 @@ sudo loginctl enable-linger "$USER"
 In UnisonDroid, create a profile with the server host, user, SSH port, the
 remote root directory you want to sync, and the socket port from step 3. The
 first sync will ask you to approve the server's SSH host key fingerprint.
+
+## Limitations
+
+UnisonDroid v1 disables Unison's archive locks (`ignorelocks = true`) on both
+replicas. Android's SELinux policy denies `link(2)` on app data, and Unison's
+lock is implemented with a hard link, so the lock cannot be taken on-device at
+all. The app serializes its own syncs, but it **cannot** detect or prevent
+another client (a desktop `unison` process, or another UnisonDroid profile)
+from syncing the same server roots concurrently. Running more than one client
+against the same roots at the same time can corrupt the archives; do not do it
+in v1.
