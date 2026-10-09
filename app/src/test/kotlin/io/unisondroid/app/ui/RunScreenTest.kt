@@ -186,10 +186,11 @@ private class FakeSyncEngine : SyncEngine(
     ProfileRepository(JsonStore(File("/nonexistent/data"))),
     KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher, FakeSshTool()),
     HostKeyStore(JsonStore(File("/nonexistent/data"))),
-    NoopTunnel,
+    FakeSshTool(),
     { UnisonRunner(it) },
     { OutputParser() },
     File("/nonexistent/unison"),
+    File("/nonexistent/ssh"),
     Clock.systemUTC(),
 ) {
     val states = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -213,9 +214,4 @@ private class FakeSyncEngine : SyncEngine(
 private object IdentityCipher : KeyCipher {
     override fun encrypt(plain: ByteArray): ByteArray = plain
     override fun decrypt(blob: ByteArray): ByteArray = blob
-}
-
-private object NoopTunnel : SshTunnel {
-    override suspend fun open(spec: TunnelSpec, decision: HostKeyDecision): TunnelHandle =
-        throw UnsupportedOperationException("not used in run screen tests")
 }

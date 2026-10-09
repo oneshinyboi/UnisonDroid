@@ -20,7 +20,6 @@ import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.ProcessSshTool
-import io.unisondroid.app.sync.SshjTunnel
 import io.unisondroid.app.sync.SyncEngine
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.UnisonRunner
@@ -298,10 +297,11 @@ object ServiceLocator {
             profiles = profiles(context),
             keys = keys(context),
             hostKeys = HostKeyStore(store(context)),
-            tunnel = SshjTunnel(),
+            sshTool = sshTool(context),
             runnerFactory = { UnisonRunner(it) },
             parserFactory = { OutputParser() },
             unisonDir = File(context.noBackupFilesDir, "unison"),
+            sshHome = File(context.noBackupFilesDir, "ssh"),
             clock = Clock.systemUTC(),
         )
     }

@@ -295,10 +295,11 @@ private class TestSyncEngine : SyncEngine(
     ProfileRepository(JsonStore(File("/nonexistent/data"))),
     KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher, FakeSshTool()),
     HostKeyStore(JsonStore(File("/nonexistent/data"))),
-    ThrowingTunnel,
+    FakeSshTool(),
     { UnisonRunner(it) },
     { OutputParser() },
     File("/nonexistent/unison"),
+    File("/nonexistent/ssh"),
     Clock.systemUTC(),
 ) {
     val states = MutableStateFlow<SyncState>(SyncState.Idle)

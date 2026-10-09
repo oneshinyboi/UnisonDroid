@@ -5,12 +5,12 @@ import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.SyncResult
-import io.unisondroid.app.data.TofuVerdict
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,14 +18,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import net.schmizz.sshj.connection.ConnectionException
-import net.schmizz.sshj.transport.TransportException
-import net.schmizz.sshj.userauth.UserAuthException
 import java.io.File
-import java.net.ConnectException
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Clock
-import kotlinx.coroutines.coroutineScope
 
 sealed interface SyncState {
     data object Idle : SyncState
@@ -52,13 +49,13 @@ open class SyncEngine(
     private val profiles: ProfileRepository,
     private val keys: KeyVault,
     private val hostKeys: HostKeyStore,
-    private val tunnel: SshTunnel,
+    private val sshTool: SshTool,
     private val runnerFactory: (File) -> UnisonRunner,
     private val parserFactory: () -> OutputParser,
     private val unisonDir: File,
+    private val sshHome: File,
     private val clock: Clock,
     private val hostKeyDecisionTimeoutMs: Long = HOST_KEY_DECISION_TIMEOUT_MS,
-    private val tunnelCloseGraceMs: Long = TUNNEL_CLOSE_GRACE_MS,
 ) {
     private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -83,9 +80,20 @@ open class SyncEngine(
             }
             is BinaryStatus.Available -> status.path
         }
+        val sshBinary = when (val status = binaryLocator.locateSsh()) {
+            is BinaryStatus.Missing -> {
+                _state.value = SyncState.Failed(
+                    profileId = profileId,
+                    reason = SyncState.Reason.BINARY_MISSING,
+                    detail = "libssh.so not found in the native library directory",
+                )
+                return true
+            }
+            is BinaryStatus.Available -> status.path
+        }
         if (!syncMutex.tryLock()) return false
         try {
-            runSync(profileId, binary)
+            runSync(profileId, binary, sshBinary)
         } finally {
             syncMutex.unlock()
         }
@@ -110,12 +118,12 @@ open class SyncEngine(
         unisonDir.listFiles { f -> f.isFile && STALE_LOCK.matches(f.name) }?.forEach { it.delete() }
     }
 
-    private suspend fun runSync(profileId: String, binary: File) {
+    private suspend fun runSync(profileId: String, binary: File, sshBinary: File) {
         activeJob = currentCoroutineContext()[Job]
         clearStaleLocks()
         var profile: Profile? = null
         var process: RunningProcess? = null
-        var handle: TunnelHandle? = null
+        var keyFile: File? = null
         var success = false
         try {
             val p = profiles.get(profileId) ?: run {
@@ -125,84 +133,41 @@ open class SyncEngine(
             profile = p
             _state.value = SyncState.Connecting(profileId)
 
-            val spec = TunnelSpec(
-                host = p.host,
-                port = p.sshPort,
-                user = p.user,
-                privateKeyPem = keys.privateKeyPem(p.sshKeyId),
-                remoteSocketPort = p.remoteSocketPort,
-                transport = p.transport,
-                serverCommand = p.serverCommand,
-            )
-            var hostKeyOutcome = HostKeyOutcome.APPROVED
-            val decision = HostKeyDecision { fingerprint ->
-                when (hostKeys.verify(p.host, p.sshPort, fingerprint)) {
-                    TofuVerdict.APPROVED -> true
-                    TofuVerdict.CHANGED -> {
-                        hostKeyOutcome = HostKeyOutcome.CHANGED
-                        false
-                    }
-                    TofuVerdict.UNKNOWN -> {
-                        val pending = CompletableDeferred<Boolean>()
-                        pendingDecision = pending
-                        _state.value = SyncState.AwaitingHostKey(profileId, fingerprint)
-                        val approved = withTimeoutOrNull(hostKeyDecisionTimeoutMs) { pending.await() }
+            val knownHosts = File(sshHome, "known_hosts")
+            val outcome = HostKeyGate(sshTool, hostKeys, knownHosts)
+                .ensureTrusted(p.host, p.sshPort, hostKeyDecisionTimeoutMs) { fingerprint ->
+                    val pending = CompletableDeferred<Boolean>()
+                    pendingDecision = pending
+                    _state.value = SyncState.AwaitingHostKey(profileId, fingerprint)
+                    try {
+                        pending.await()
+                    } finally {
                         pendingDecision = null
-                        when (approved) {
-                            true -> {
-                                hostKeys.approve(p.host, p.sshPort, fingerprint)
-                                true
-                            }
-
-                            false -> {
-                                hostKeyOutcome = HostKeyOutcome.DECLINED
-                                false
-                            }
-
-                            null -> {
-                                hostKeyOutcome = HostKeyOutcome.TIMED_OUT
-                                false
-                            }
-                        }
                     }
                 }
-            }
-            val opened = try {
-                tunnel.open(spec, decision)
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (t: Throwable) {
-                when (hostKeyOutcome) {
-                    HostKeyOutcome.TIMED_OUT ->
-                        failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
-                    HostKeyOutcome.DECLINED ->
-                        failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
-                    else -> failSync(profileId, p, mapException(t), failureDetail(t))
-                }
-                return
-            }
-            handle = opened
-            when (hostKeyOutcome) {
-                HostKeyOutcome.CHANGED -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, "Host key for ${p.host}:${p.sshPort} has changed; refusing to connect")
-                    return
-                }
-                HostKeyOutcome.DECLINED -> {
+            when (outcome) {
+                is HostKeyOutcome.Trusted -> Unit
+                is HostKeyOutcome.Declined -> {
                     failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
                     return
                 }
-                HostKeyOutcome.TIMED_OUT -> {
+                is HostKeyOutcome.TimedOut -> {
                     failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
                     return
                 }
-                HostKeyOutcome.APPROVED -> Unit
+                is HostKeyOutcome.ScanFailed -> {
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, "Could not scan host keys: ${outcome.detail}")
+                    return
+                }
             }
 
+            val key = writePrivateKey(p)
+            keyFile = key
             unisonDir.mkdirs()
             val sshCommand = SshCommand(
-                binary = File(binary.parentFile, "libssh.so"),
-                keyFile = File(unisonDir, p.sshKeyId),
-                knownHosts = File(unisonDir, "known_hosts"),
+                binary = sshBinary,
+                keyFile = key,
+                knownHosts = knownHosts,
                 port = p.sshPort,
             )
             File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand))
@@ -217,10 +182,12 @@ open class SyncEngine(
             val log = ArrayDeque<String>()
             var progress = 0f
             var versionMismatch: String? = null
+            var authFailure: String? = null
+            var hostKeyFailure: String? = null
+            var lostConnection: String? = null
             var permissionDenied: String? = null
 
-            val exit: Int? = coroutineScope {
-                val settled = CompletableDeferred<Int?>()
+            val exit = coroutineScope {
                 val collector = launch {
                     proc.output.collect { line ->
                         if (log.size >= LOG_MAX_LINES) log.removeFirst()
@@ -232,36 +199,24 @@ open class SyncEngine(
                                 else -> Unit
                             }
                         }
+                        if (authFailure == null && line.contains(AUTH_MARKER)) authFailure = line
+                        if (hostKeyFailure == null && line.contains(HOST_KEY_MARKER)) hostKeyFailure = line
+                        if (lostConnection == null && line.contains(LOST_CONNECTION_MARKER)) lostConnection = line
                         if (permissionDenied == null && line.contains(PERMISSION_DENIED_MARKER)) permissionDenied = line
                         _state.value = SyncState.Syncing(profileId, log.toList(), progress)
                     }
-                    settled.complete(proc.exitCode())
                 }
-                val watcher = launch {
-                    opened.awaitClosed()
-                    // The remote unison -server exits first on a normal
-                    // completion, closing the relay while the local process is
-                    // still flushing archives; only treat the closed tunnel as
-                    // fatal if the process fails to exit on its own in time.
-                    val exited = withTimeoutOrNull(tunnelCloseGraceMs) { settled.await() }
-                    if (exited == null) {
-                        settled.complete(null)
-                        proc.kill()
-                    }
-                }
-                val code = settled.await()
-                collector.cancelAndJoin()
-                watcher.cancelAndJoin()
-                code
+                collector.join()
+                proc.exitCode()
             }
 
-            val summary = parser.finalize(exit ?: EXIT_UNKNOWN)
-            val mismatch = versionMismatch
-            val denied = permissionDenied
+            val summary = parser.finalize(exit)
             when {
-                exit == null -> failSync(profileId, p, SyncState.Reason.TUNNEL, "SSH tunnel closed before unison finished")
-                mismatch != null -> failSync(profileId, p, SyncState.Reason.VERSION, mismatch)
-                denied != null -> failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, denied)
+                versionMismatch != null -> failSync(profileId, p, SyncState.Reason.VERSION, versionMismatch!!)
+                hostKeyFailure != null -> failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyFailure!!)
+                authFailure != null -> failSync(profileId, p, SyncState.Reason.AUTH, authFailure!!)
+                lostConnection != null -> failSync(profileId, p, SyncState.Reason.TUNNEL, lostConnection!!)
+                permissionDenied != null -> failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!)
                 exit != 0 -> failSync(profileId, p, SyncState.Reason.EXIT, logTail(log))
                 else -> {
                     val result = if (summary.failed == 0 && summary.conflicts == 0) SyncResult.OK else SyncResult.WARNINGS
@@ -282,9 +237,24 @@ open class SyncEngine(
             }
         } finally {
             if (!success) process?.kill()
-            handle?.close()
+            keyFile?.delete()
             activeJob = null
         }
+    }
+
+    private suspend fun writePrivateKey(profile: Profile): File {
+        val pem = keys.privateKeyPem(profile.sshKeyId)
+        sshHome.mkdirs()
+        val keyFile = File(sshHome, profile.sshKeyId)
+        Files.deleteIfExists(keyFile.toPath())
+        Files.createFile(
+            keyFile.toPath(),
+            PosixFilePermissions.asFileAttribute(
+                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+            ),
+        )
+        Files.write(keyFile.toPath(), pem.toByteArray())
+        return keyFile
     }
 
     private suspend fun failSync(profileId: String, profile: Profile?, reason: SyncState.Reason, detail: String) {
@@ -298,11 +268,7 @@ open class SyncEngine(
 
     private fun logTail(log: List<String>): String = log.takeLast(DETAIL_TAIL_LINES).joinToString(LINE_FEED)
 
-    private fun mapException(t: Throwable): SyncState.Reason = when (t) {
-        is UserAuthException -> SyncState.Reason.AUTH
-        is TransportException, is ConnectionException, is ConnectException -> SyncState.Reason.TUNNEL
-        else -> SyncState.Reason.UNKNOWN
-    }
+    private fun mapException(t: Throwable): SyncState.Reason = SyncState.Reason.UNKNOWN
 
     private fun failureDetail(t: Throwable): String =
         t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
@@ -313,15 +279,14 @@ open class SyncEngine(
     private fun hostKeyTimeoutDetail(profile: Profile): String =
         "Host key approval for ${profile.host}:${profile.sshPort} timed out; no decision was made"
 
-    private enum class HostKeyOutcome { APPROVED, CHANGED, DECLINED, TIMED_OUT }
-
     private companion object {
         const val LOG_MAX_LINES = 2000
         const val DETAIL_TAIL_LINES = 20
         const val HOST_KEY_DECISION_TIMEOUT_MS = 300_000L
-        const val TUNNEL_CLOSE_GRACE_MS = 10_000L
-        const val EXIT_UNKNOWN = -1
         const val LINE_FEED = "\n"
+        const val AUTH_MARKER = "Permission denied (publickey"
+        const val HOST_KEY_MARKER = "Host key verification failed"
+        const val LOST_CONNECTION_MARKER = "Lost connection with the server"
         const val PERMISSION_DENIED_MARKER = "Permission denied"
         val STALE_LOCK = Regex("lk[0-9a-f]{32}")
     }

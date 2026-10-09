@@ -12,6 +12,11 @@ class BinaryLocator(private val nativeLibraryDir: File) {
         val candidate = File(nativeLibraryDir, "libunison.so")
         return if (candidate.isFile) BinaryStatus.Available(candidate) else BinaryStatus.Missing
     }
+
+    fun locateSsh(): BinaryStatus {
+        val candidate = File(nativeLibraryDir, "libssh.so")
+        return if (candidate.isFile) BinaryStatus.Available(candidate) else BinaryStatus.Missing
+    }
 }
 
 sealed interface BinaryStatus {

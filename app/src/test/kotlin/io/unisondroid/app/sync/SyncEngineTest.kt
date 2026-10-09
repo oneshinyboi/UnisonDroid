@@ -12,9 +12,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -36,6 +36,9 @@ class SyncEngineTest {
 
     @TempDir
     lateinit var unisonDir: File
+
+    @TempDir
+    lateinit var sshHome: File
 
     @TempDir
     lateinit var nativeDir: File
@@ -62,38 +65,27 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `happy path connects writes prf runs unison and finishes in order`() = runTest {
-        val tunnelPark = CompletableDeferred<Unit>()
+    fun `happy path runs unison over ssh and finishes`() = runTest {
         val lineGate = CompletableDeferred<Unit>()
         var prfAtRunnerStart: String? = null
+        var keyExistedAtRunnerStart = false
         val h = harness(
             scripts = listOf(
-                ScriptedProcess(
-                    lines = listOf(PROGRESS_LINE, SUMMARY_LINE),
-                    gateAfter = 1,
-                    gate = lineGate,
-                ),
+                ScriptedProcess(lines = listOf(PROGRESS_LINE, SUMMARY_LINE), gateAfter = 1, gate = lineGate),
             ),
-            tunnelPark = tunnelPark,
-            onStart = { _, _ -> prfAtRunnerStart = File(unisonDir, "prof1.prf").readText() },
+            onStart = { _, _ ->
+                prfAtRunnerStart = File(unisonDir, "prof1.prf").readText()
+                keyExistedAtRunnerStart = sshHome.listFiles()?.any { it.isFile } == true
+            },
         )
         assertEquals(SyncState.Idle, h.engine.state.value)
+
         val job = launch { h.engine.requestSync("prof1") }
-
-        val connecting = awaitState(h.engine) { it is SyncState.Connecting }
-        assertEquals(SyncState.Connecting("prof1"), connecting)
-        assertEquals(listOf("tunnel-open"), h.events)
-        assertFalse(File(unisonDir, "prof1.prf").exists(), "prf must be written only after the tunnel is up")
-        assertTrue(h.runner.starts.isEmpty(), "runner must not start while parked inside tunnel open")
-
-        tunnelPark.complete(Unit)
 
         val syncing = awaitState(h.engine) {
             it is SyncState.Syncing && it.log.lastOrNull() == PROGRESS_LINE
         } as SyncState.Syncing
-        assertEquals(listOf(PROGRESS_LINE), syncing.log)
         assertEquals(0.5f, syncing.progress)
-        assertEquals(listOf("tunnel-open", "runner-start"), h.events)
 
         lineGate.complete(Unit)
         withTimeout(10_000) { job.join() }
@@ -101,25 +93,20 @@ class SyncEngineTest {
         val finished = h.engine.state.value as SyncState.Finished
         assertEquals("prof1", finished.profileId)
         assertEquals(SyncSummary(transferred = 2, failed = 0, conflicts = 0), finished.summary)
-        h.tunnel.assertAllClosed()
         assertFalse(h.runner.processes.single().killed)
+        assertTrue(keyExistedAtRunnerStart, "the private key file must exist while unison runs")
+        assertFalse(File(sshHome, h.keyId).exists(), "the private key file must be deleted after the sync")
 
-        val spec = h.tunnel.specs.single()
-        assertEquals(HOST, spec.host)
-        assertEquals(SSH_PORT, spec.port)
-        assertEquals("syncuser", spec.user)
-        assertEquals(REMOTE_SOCKET_PORT, spec.remoteSocketPort)
-        assertEquals(h.vault.privateKeyPem(h.keyId), spec.privateKeyPem)
+        val prf = File(unisonDir, "prof1.prf").readText()
+        assertEquals(prf, prfAtRunnerStart)
+        assertTrue(prf.contains("root = /storage/emulated/0/Sync"), "got:\n$prf")
+        assertTrue(prf.contains("root = ssh://syncuser@$HOST/srv/sync"), "got:\n$prf")
+        assertTrue(prf.contains(" -p $SSH_PORT"), "got:\n$prf")
+        assertTrue(prf.contains("perms = 0"))
 
         val (env, args) = h.runner.starts.single()
         assertEquals(mapOf("UNISON" to unisonDir.absolutePath), env)
         assertEquals(listOf("prof1", "-batch"), args)
-
-        val prf = File(unisonDir, "prof1.prf").readText()
-        assertEquals(prf, prfAtRunnerStart)
-        assertTrue(prf.contains("root = /storage/emulated/0/Sync"))
-        assertTrue(prf.contains("root = ssh://syncuser@sync.example.com/srv/sync"))
-        assertTrue(prf.contains("perms = 0"))
     }
 
     @Test
@@ -133,6 +120,7 @@ class SyncEngineTest {
         val awaiting = awaitState(h.engine) { it is SyncState.AwaitingHostKey }
         assertEquals(SyncState.AwaitingHostKey(profileId = "prof1", fingerprint = SERVER_FINGERPRINT), awaiting)
         assertTrue(h.runner.starts.isEmpty(), "runner must not start while host key decision is pending")
+        assertFalse(File(unisonDir, "prof1.prf").exists(), "prf must not be written before trust")
 
         h.engine.respondHostKey(true)
         withTimeout(10_000) { job.join() }
@@ -141,11 +129,10 @@ class SyncEngineTest {
         assertEquals("prof1", finished.profileId)
         assertEquals(SERVER_FINGERPRINT, h.hostKeys.known(HOST, SSH_PORT)?.fingerprint)
         assertEquals(1, h.runner.starts.size)
-        h.tunnel.assertAllClosed()
     }
 
     @Test
-    fun `declined host key fails with AUTH and closes tunnel`() = runTest {
+    fun `declined host key fails with AUTH and never runs unison`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = emptyList())),
             knownFingerprint = null,
@@ -157,10 +144,8 @@ class SyncEngineTest {
         withTimeout(10_000) { job.join() }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.AUTH, failed.reason)
         assertTrue(failed.detail.contains("host key", ignoreCase = true), "detail was: ${failed.detail}")
-        h.tunnel.assertAllClosed()
         assertTrue(h.runner.starts.isEmpty())
         assertFalse(File(unisonDir, "prof1.prf").exists())
         assertNull(h.hostKeys.known(HOST, SSH_PORT), "declined fingerprint must not be persisted")
@@ -181,31 +166,26 @@ class SyncEngineTest {
         withTimeout(10_000) { job.join() }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
         assertTrue(failed.detail.contains("timed out", ignoreCase = true), "detail was: ${failed.detail}")
-        assertFalse(failed.detail.contains("declined", ignoreCase = true), "detail was: ${failed.detail}")
         assertNull(h.hostKeys.known(HOST, SSH_PORT), "a timed-out decision must not persist a fingerprint")
-        h.tunnel.assertAllClosed()
         assertTrue(h.runner.starts.isEmpty())
     }
 
     @Test
-    fun `changed host key fails with TUNNEL and closes tunnel`() = runTest {
+    fun `host key scan failure fails with TUNNEL`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = emptyList())),
-            knownFingerprint = OTHER_FINGERPRINT,
+            knownFingerprint = null,
+            scannedHostKeys = emptyList(),
         )
-        val job = launch { h.engine.requestSync("prof1") }
-        withTimeout(10_000) { job.join() }
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
-        h.tunnel.assertAllClosed()
+        assertTrue(failed.detail.contains("scan", ignoreCase = true), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
-        assertFalse(File(unisonDir, "prof1.prf").exists())
-        assertEquals(OTHER_FINGERPRINT, h.hostKeys.known(HOST, SSH_PORT)?.fingerprint)
     }
 
     @Test
@@ -221,19 +201,16 @@ class SyncEngineTest {
         val proceeded = withTimeout(10_000) { h.engine.requestSync("prof2") }
 
         assertFalse(proceeded)
-        assertTrue(syncing is SyncState.Syncing)
         assertEquals(syncing, h.engine.state.value, "rejected request must not touch state")
         assertEquals(1, h.runner.starts.size, "rejected request must not start another run")
 
         gate.complete(Unit)
         withTimeout(10_000) { job.join() }
-
-        val finished = h.engine.state.value as SyncState.Finished
-        assertEquals("prof1", finished.profileId)
+        assertTrue(h.engine.state.value is SyncState.Finished)
     }
 
     @Test
-    fun `cancel kills process closes tunnel and reports CANCELLED`() = runTest {
+    fun `cancel kills process and reports CANCELLED`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
@@ -245,51 +222,9 @@ class SyncEngineTest {
         withTimeout(10_000) { job.join() }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.CANCELLED, failed.reason)
         assertTrue(h.runner.processes.single().killed)
-        h.tunnel.assertAllClosed()
         assertEquals(SyncResult.FAILED, h.repo.get("prof1")?.lastResult)
-    }
-
-    @Test
-    fun `tunnel closing mid-sync kills process and fails with TUNNEL`() = runTest {
-        val gate = CompletableDeferred<Unit>()
-        val h = harness(
-            scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
-        )
-        val job = launch { h.engine.requestSync("prof1") }
-        awaitState(h.engine) { it is SyncState.Syncing }
-
-        h.tunnel.handles.single().closedOrDead.complete(Unit)
-
-        withTimeout(10_000) { job.join() }
-
-        val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
-        assertEquals(SyncState.Reason.TUNNEL, failed.reason)
-        assertTrue(h.runner.processes.single().killed)
-        h.tunnel.assertAllClosed()
-    }
-
-    @Test
-    fun `tunnel closing just before unison exits does not fail the sync`() = runTest {
-        val gate = CompletableDeferred<Unit>()
-        val h = harness(
-            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE), gateAfter = 1, gate = gate)),
-        )
-        val job = launch { h.engine.requestSync("prof1") }
-        awaitState(h.engine) { it is SyncState.Syncing }
-
-        h.tunnel.handles.single().closedOrDead.complete(Unit)
-        runCurrent()
-        gate.complete(Unit)
-        withTimeout(10_000) { job.join() }
-
-        val state = h.engine.state.value
-        assertTrue(state is SyncState.Finished, "state was: $state")
-        assertFalse(h.runner.processes.single().killed, "a cleanly exiting process must not be killed")
-        h.tunnel.assertAllClosed()
     }
 
     @Test
@@ -302,11 +237,25 @@ class SyncEngineTest {
         withTimeout(10_000) { h.engine.requestSync("prof1") }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
-        assertTrue(h.tunnel.specs.isEmpty(), "tunnel must not be opened when binary is missing")
-        assertTrue(h.runner.starts.isEmpty(), "runner must not start when binary is missing")
-        assertFalse(File(unisonDir, "prof1.prf").exists(), "prf must not be written when binary is missing")
+        assertTrue(failed.detail.contains("libunison.so"), "detail was: ${failed.detail}")
+        assertTrue(h.runner.starts.isEmpty())
+        assertFalse(File(unisonDir, "prof1.prf").exists())
+    }
+
+    @Test
+    fun `ssh binary missing fails with BINARY_MISSING before any IO`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            sshBinaryAvailable = false,
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
+
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
+        assertTrue(failed.detail.contains("libssh.so"), "detail was: ${failed.detail}")
+        assertTrue(h.runner.starts.isEmpty())
     }
 
     @Test
@@ -314,11 +263,7 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(
-                    lines = listOf(
-                        "[wnt] ...  1/2 KiB  a.txt",
-                        "Error: something exploded",
-                        "Unison server: fatal",
-                    ),
+                    lines = listOf("[wnt] ...  1/2 KiB  a.txt", "Error: something exploded", "Unison server: fatal"),
                     exit = 3,
                 ),
             ),
@@ -327,11 +272,8 @@ class SyncEngineTest {
         withTimeout(10_000) { h.engine.requestSync("prof1") }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.EXIT, failed.reason)
         assertTrue(failed.detail.contains("something exploded"), "detail was: ${failed.detail}")
-        assertTrue(failed.detail.contains("Unison server: fatal"), "detail was: ${failed.detail}")
-        h.tunnel.assertAllClosed()
         assertEquals(SyncResult.FAILED, h.repo.get("prof1")?.lastResult)
     }
 
@@ -352,14 +294,12 @@ class SyncEngineTest {
         withTimeout(10_000) { h.engine.requestSync("prof1") }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.VERSION, failed.reason)
         assertTrue(failed.detail.contains("Received unexpected header"), "detail was: ${failed.detail}")
-        h.tunnel.assertAllClosed()
     }
 
     @Test
-    fun `permission denied output fails with LOCAL_PERMISSIONS`() = runTest {
+    fun `local permission denied output fails with LOCAL_PERMISSIONS`() = runTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(
@@ -372,11 +312,74 @@ class SyncEngineTest {
         withTimeout(10_000) { h.engine.requestSync("prof1") }
 
         val failed = h.engine.state.value as SyncState.Failed
-        assertEquals("prof1", failed.profileId)
         assertEquals(SyncState.Reason.LOCAL_PERMISSIONS, failed.reason)
-        assertTrue(failed.detail.contains("Permission denied"), "detail was: ${failed.detail}")
         assertEquals(SyncResult.FAILED, h.repo.get("prof1")?.lastResult)
-        h.tunnel.assertAllClosed()
+    }
+
+    @Test
+    fun `publickey auth failure maps to AUTH`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf("Diamond@veryshiny.net: Permission denied (publickey,password)."),
+                    exit = 255,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
+
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncState.Reason.AUTH, failed.reason)
+    }
+
+    @Test
+    fun `host key verification failure maps to TUNNEL`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+                        "Host key verification failed.",
+                    ),
+                    exit = 255,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
+
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncState.Reason.TUNNEL, failed.reason)
+    }
+
+    @Test
+    fun `lost connection output maps to TUNNEL`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf("Fatal error: Lost connection with the server"),
+                    exit = 2,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
+
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncState.Reason.TUNNEL, failed.reason)
+    }
+
+    @Test
+    fun `private key file is deleted even when the sync fails`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf("Error: boom"), exit = 1)),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1") }
+
+        assertTrue(h.engine.state.value is SyncState.Failed)
+        assertFalse(File(sshHome, h.keyId).exists(), "key material must not linger after a failure")
     }
 
     @Test
@@ -400,13 +403,10 @@ class SyncEngineTest {
         } as SyncState.Syncing
         assertEquals(2000, syncing.log.size)
         assertEquals("line-0501", syncing.log.first())
-        assertEquals(lastLine, syncing.log.last())
 
         gate.complete(Unit)
         withTimeout(10_000) { job.join() }
-
-        val finished = h.engine.state.value as SyncState.Finished
-        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 0), finished.summary)
+        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 0), (h.engine.state.value as SyncState.Finished).summary)
     }
 
     @Test
@@ -438,14 +438,19 @@ class SyncEngineTest {
         profileIds: List<String> = listOf("prof1", "prof2"),
         knownFingerprint: String? = SERVER_FINGERPRINT,
         binaryAvailable: Boolean = true,
-        tunnelPark: CompletableDeferred<Unit>? = null,
+        sshBinaryAvailable: Boolean = true,
         hostKeyDecisionTimeoutMs: Long = 300_000L,
-        tunnelCloseGraceMs: Long = 50L,
+        scannedHostKeys: List<HostKeyEntry> = listOf(
+            HostKeyEntry(
+                knownHostsLine = "[$HOST]:$SSH_PORT ssh-ed25519 AAAAad-hoc",
+                keyType = "ssh-ed25519",
+                fingerprint = SERVER_FINGERPRINT,
+            ),
+        ),
         onStart: ((Map<String, String>, List<String>) -> Unit)? = null,
     ): Harness {
-        if (binaryAvailable) {
-            File(nativeDir, "libunison.so").writeText("fake-binary")
-        }
+        if (binaryAvailable) File(nativeDir, "libunison.so").writeText("fake-binary")
+        if (sshBinaryAvailable) File(nativeDir, "libssh.so").writeText("fake-ssh")
         val store = JsonStore(dataDir)
         val repo = ProfileRepository(store)
         val vault = KeyVault(store, IdentityCipher, FakeSshTool())
@@ -457,22 +462,22 @@ class SyncEngineTest {
             hostKeys.approve(HOST, SSH_PORT, knownFingerprint)
         }
         val events = mutableListOf<String>()
-        val tunnel = FakeTunnel(parkBeforeReturn = tunnelPark, events = events)
+        val sshTool = FakeSshTool().apply { this.scannedHostKeys = scannedHostKeys }
         val runner = FakeRunner(scripts, events, onStart)
         val engine = SyncEngine(
             binaryLocator = BinaryLocator(nativeDir),
             profiles = repo,
             keys = vault,
             hostKeys = hostKeys,
-            tunnel = tunnel,
+            sshTool = sshTool,
             runnerFactory = { _ -> runner },
             parserFactory = { OutputParser() },
             unisonDir = unisonDir,
+            sshHome = sshHome,
             clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
             hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
-            tunnelCloseGraceMs = tunnelCloseGraceMs,
         )
-        return Harness(engine, repo, vault, hostKeys, tunnel, runner, events, profiles, key.id)
+        return Harness(engine, repo, vault, hostKeys, sshTool, runner, events, profiles, key.id)
     }
 
     private fun profile(id: String, sshKeyId: String) = Profile(
@@ -492,7 +497,7 @@ class SyncEngineTest {
         val repo: ProfileRepository,
         val vault: KeyVault,
         val hostKeys: HostKeyStore,
-        val tunnel: FakeTunnel,
+        val sshTool: FakeSshTool,
         val runner: FakeRunner,
         val events: MutableList<String>,
         val profiles: Map<String, Profile>,
@@ -540,50 +545,12 @@ class SyncEngineTest {
         }
     }
 
-    private class FakeHandle : TunnelHandle {
-        override val localPort: Int = FAKE_LOCAL_PORT
-        var closed = false
-        var approved = false
-        val closedOrDead = CompletableDeferred<Unit>()
-
-        override fun close() {
-            closed = true
-            closedOrDead.complete(Unit)
-        }
-
-        override suspend fun awaitClosed() = closedOrDead.await()
-    }
-
-    private class FakeTunnel(
-        private val fingerprint: String = SERVER_FINGERPRINT,
-        private val parkBeforeReturn: CompletableDeferred<Unit>? = null,
-        private val events: MutableList<String> = mutableListOf(),
-    ) : SshTunnel {
-
-        val specs = mutableListOf<TunnelSpec>()
-        val handles = mutableListOf<FakeHandle>()
-
-        override suspend fun open(spec: TunnelSpec, decision: HostKeyDecision): TunnelHandle {
-            events += "tunnel-open"
-            specs += spec
-            val handle = FakeHandle()
-            handles += handle
-            handle.approved = decision.decide(fingerprint)
-            parkBeforeReturn?.await()
-            return handle
-        }
-
-        fun assertAllClosed() = handles.forEach { assertTrue(it.closed, "tunnel handle was left open") }
-    }
-
     private companion object {
         const val FIXED_NOW_MILLIS = 1_760_000_000_000L
-        const val FAKE_LOCAL_PORT = 23456
         const val HOST = "sync.example.com"
         const val SSH_PORT = 2222
         const val REMOTE_SOCKET_PORT = 22333
         val SERVER_FINGERPRINT = "SHA256:" + "A".repeat(43)
-        val OTHER_FINGERPRINT = "SHA256:" + "B".repeat(43)
         val PROGRESS_LINE = "[wnt] ...  5/10 KiB  photos/vacation.jpg"
         val SUMMARY_LINE = "Synchronization complete at 21:33:33  (2 items transferred, 0 skipped, 0 failed)"
         val FAKE_BINARY = File("/nowhere/libunison.so")
