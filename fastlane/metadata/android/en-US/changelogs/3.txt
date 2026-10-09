@@ -1,0 +1,8 @@
+Sync without setting up a server daemon.
+
+- New profiles connect over SSH and start "unison -server" on the remote side
+  automatically for each sync — the same way the desktop Unison client works.
+  No systemd unit or long-running socket server required.
+- The previous socket-server mode is still available per profile under
+  Connection.
+- Other improvements and under-the-hood fixes.
