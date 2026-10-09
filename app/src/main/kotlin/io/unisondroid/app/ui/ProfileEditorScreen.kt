@@ -61,6 +61,8 @@ fun ProfileEditorScreen(
     val repository = remember(context) { ServiceLocator.profiles(context) }
     val vault = remember(context) { ServiceLocator.keys(context) }
     val scope = rememberCoroutineScope()
+    var hasAccess by remember { mutableStateOf(hasAllFilesAccess(context)) }
+    val requestAccess = rememberAllFilesAccessRequest { hasAccess = it }
 
     val loaded by produceState<EditorData?>(initialValue = null, repository, vault, profileId) {
         value = EditorData(
@@ -84,6 +86,8 @@ fun ProfileEditorScreen(
                 onSaved()
             }
         },
+        hasLocalAccess = hasAccess,
+        onRequestAccess = requestAccess,
         modifier = modifier,
     )
 }
@@ -98,6 +102,8 @@ internal fun ProfileEditorContent(
     onSave: (Profile) -> Unit,
     modifier: Modifier = Modifier,
     startDir: File = File("/storage/emulated/0"),
+    hasLocalAccess: Boolean = true,
+    onRequestAccess: () -> Unit = {},
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var localRoot by remember(initial) { mutableStateOf(initial?.localRoot ?: "") }
@@ -126,6 +132,7 @@ internal fun ProfileEditorContent(
             if (remoteRoot.isBlank()) add("remote root")
             if (host.isBlank()) add("host")
             if (user.isBlank()) add("user")
+            if (keyId.isBlank()) add("SSH key (create one on the Keys screen)")
         }
         if (missing.isNotEmpty()) {
             error = "Required: " + missing.joinToString(", ")
@@ -290,19 +297,44 @@ internal fun ProfileEditorContent(
     }
 
     if (browsing) {
-        AlertDialog(
-            onDismissRequest = { browsing = false },
-            confirmButton = {},
-            title = { Text("Choose local folder") },
-            text = {
-                PathBrowser(
-                    startDir = startDir,
-                    onPicked = { picked ->
-                        localRoot = picked
-                        browsing = false
-                    },
-                )
-            },
-        )
+        if (hasLocalAccess) {
+            AlertDialog(
+                onDismissRequest = { browsing = false },
+                confirmButton = {},
+                title = { Text("Choose local folder") },
+                text = {
+                    PathBrowser(
+                        startDir = startDir,
+                        onPicked = { picked ->
+                            localRoot = picked
+                            browsing = false
+                        },
+                    )
+                },
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { browsing = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            browsing = false
+                            onRequestAccess()
+                        },
+                        modifier = Modifier.testTag(GRANT_ACCESS_TAG),
+                    ) { Text("Grant All Files Access") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { browsing = false }) { Text("Cancel") }
+                },
+                title = { Text("Storage access needed") },
+                text = {
+                    Text(
+                        "UnisonDroid needs All Files Access to browse and sync folders under " +
+                            "/storage/emulated/0. Grant it, then reopen the browser.",
+                    )
+                },
+            )
+        }
     }
 }

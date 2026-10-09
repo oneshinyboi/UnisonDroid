@@ -84,15 +84,27 @@ class SyncService : LifecycleService() {
             }
         }
         lifecycleScope.launch {
-            try {
+            val accepted = try {
                 engine.requestSync(profileId)
-            } finally {
-                syncInFlight = false
-                maybeStop()
+            } catch (t: Throwable) {
+                false
             }
+            syncInFlight = false
+            if (!accepted && !isActiveSync(engine.state.value)) {
+                // Nothing is running to attach to, so don't linger in the
+                // foreground with a stale "Syncing…" notification.
+                stopNow(removeNotification = true)
+                return@launch
+            }
+            maybeStop()
         }
         return START_NOT_STICKY
     }
+
+    private fun isActiveSync(state: SyncState): Boolean =
+        state is SyncState.Connecting ||
+            state is SyncState.Syncing ||
+            state is SyncState.AwaitingHostKey
 
     private fun onState(state: SyncState) {
         if (stopped) return
@@ -212,6 +224,8 @@ object ServiceLocator {
     private var cachedKeys: KeyVault? = null
     private var cachedKeysProvider: ((Context) -> KeyVault)? = null
 
+    private var cachedStore: JsonStore? = null
+
     @Synchronized
     fun engine(context: Context): SyncEngine {
         val provider = engineProvider
@@ -253,21 +267,27 @@ object ServiceLocator {
         cachedProfilesProvider = null
         cachedKeys = null
         cachedKeysProvider = null
+        cachedStore = null
+    }
+
+    @Synchronized
+    private fun store(context: Context): JsonStore {
+        cachedStore?.let { return it }
+        return JsonStore(context.filesDir).also { cachedStore = it }
     }
 
     private fun buildProfiles(context: Context): ProfileRepository =
-        ProfileRepository(JsonStore(context.filesDir))
+        ProfileRepository(store(context))
 
     private fun buildKeys(context: Context): KeyVault =
-        KeyVault(JsonStore(context.filesDir), KeystoreAesCipher())
+        KeyVault(store(context), KeystoreAesCipher())
 
     private fun buildEngine(context: Context): SyncEngine {
-        val store = JsonStore(context.filesDir)
         return SyncEngine(
             binaryLocator = BinaryLocator(File(context.applicationInfo.nativeLibraryDir)),
-            profiles = ProfileRepository(store),
-            keys = KeyVault(store, KeystoreAesCipher()),
-            hostKeys = HostKeyStore(store),
+            profiles = profiles(context),
+            keys = keys(context),
+            hostKeys = HostKeyStore(store(context)),
             tunnel = SshjTunnel(),
             runnerFactory = { UnisonRunner(it) },
             parserFactory = { OutputParser() },

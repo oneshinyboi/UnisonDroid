@@ -26,5 +26,6 @@ Features:
 - The Unison binary is bundled, so no extra tooling is required on the phone.
   The server still needs a matching Unison version.
 
-UnisonDroid is licensed under the GNU GPL v3. It is published on F-Droid and as
-signed APKs on GitHub Releases.
+UnisonDroid is licensed under the GNU GPL v3. It is functional for manual,
+one-tap sync and is available as signed APKs on GitHub Releases while its
+F-Droid inclusion is pending.

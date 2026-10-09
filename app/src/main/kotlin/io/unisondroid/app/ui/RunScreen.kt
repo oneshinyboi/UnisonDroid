@@ -74,13 +74,14 @@ fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
         }
     }
 
+    val requestStorageAccess = rememberAllFilesAccessRequest()
     RunContent(
         state = state,
         onCancel = { engine.cancel() },
         onHostKeyDecision = { approve -> scope.launch { engine.respondHostKey(approve) } },
+        onGrantStorageAccess = requestStorageAccess,
         modifier = modifier,
-    )
-}
+    )}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +90,7 @@ internal fun RunContent(
     onCancel: () -> Unit,
     onHostKeyDecision: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onGrantStorageAccess: () -> Unit = {},
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -109,7 +111,7 @@ internal fun RunContent(
                     if (state.reason == SyncState.Reason.BINARY_MISSING) {
                         EngineMissingCard(state.detail)
                     } else {
-                        FailureCard(state)
+                        FailureCard(state, onGrantStorageAccess)
                     }
 
                 is SyncState.AwaitingHostKey -> StatusLine("Waiting for host key approval…")
@@ -186,7 +188,7 @@ private fun SummaryCard(state: SyncState.Finished) {
 }
 
 @Composable
-private fun FailureCard(state: SyncState.Failed) {
+private fun FailureCard(state: SyncState.Failed, onGrantStorageAccess: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().testTag(RUN_FAILURE_TAG)) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -195,6 +197,17 @@ private fun FailureCard(state: SyncState.Failed) {
             Text(text = "Sync failed", style = MaterialTheme.typography.titleLarge)
             Text(text = reasonLabel(state.reason), style = MaterialTheme.typography.bodyMedium)
             Text(text = state.detail, style = MaterialTheme.typography.bodySmall)
+            if (state.reason == SyncState.Reason.LOCAL_PERMISSIONS) {
+                Text(
+                    text = "Grant All Files Access so UnisonDroid can read and write your " +
+                        "local folders, then run the sync again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = onGrantStorageAccess,
+                    modifier = Modifier.testTag(GRANT_ACCESS_TAG),
+                ) { Text(text = "Grant All Files Access") }
+            }
         }
     }
 }

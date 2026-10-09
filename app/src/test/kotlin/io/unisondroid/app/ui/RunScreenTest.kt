@@ -148,6 +148,21 @@ class RunScreenTest {
         compose.onNodeWithText("libunison.so not found", substring = true).assertExists()
     }
 
+    @Test
+    fun `local permissions failure surfaces the all files access grant action`() {
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
+
+        engine.states.value = SyncState.Failed(
+            profileId = "p1",
+            reason = SyncState.Reason.LOCAL_PERMISSIONS,
+            detail = "Permission denied",
+        )
+        awaitTag(GRANT_ACCESS_TAG)
+
+        compose.onNodeWithTag(GRANT_ACCESS_TAG).assertExists()
+        compose.onNodeWithText("Grant All Files Access").assertExists()
+    }
+
     private fun awaitTag(tag: String) {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()

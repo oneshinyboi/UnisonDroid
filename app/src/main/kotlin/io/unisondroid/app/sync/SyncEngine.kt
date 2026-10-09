@@ -57,6 +57,7 @@ open class SyncEngine(
     private val parserFactory: () -> OutputParser,
     private val unisonDir: File,
     private val clock: Clock,
+    private val hostKeyDecisionTimeoutMs: Long = HOST_KEY_DECISION_TIMEOUT_MS,
 ) {
     private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -131,14 +132,23 @@ open class SyncEngine(
                         val pending = CompletableDeferred<Boolean>()
                         pendingDecision = pending
                         _state.value = SyncState.AwaitingHostKey(profileId, fingerprint)
-                        val approved = withTimeoutOrNull(HOST_KEY_DECISION_TIMEOUT_MS) { pending.await() } ?: false
+                        val approved = withTimeoutOrNull(hostKeyDecisionTimeoutMs) { pending.await() }
                         pendingDecision = null
-                        if (approved) {
-                            hostKeys.approve(p.host, p.sshPort, fingerprint)
-                            true
-                        } else {
-                            hostKeyOutcome = HostKeyOutcome.DECLINED
-                            false
+                        when (approved) {
+                            true -> {
+                                hostKeys.approve(p.host, p.sshPort, fingerprint)
+                                true
+                            }
+
+                            false -> {
+                                hostKeyOutcome = HostKeyOutcome.DECLINED
+                                false
+                            }
+
+                            null -> {
+                                hostKeyOutcome = HostKeyOutcome.TIMED_OUT
+                                false
+                            }
                         }
                     }
                 }
@@ -148,8 +158,13 @@ open class SyncEngine(
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
-                val reason = if (hostKeyOutcome == HostKeyOutcome.DECLINED) SyncState.Reason.AUTH else mapException(t)
-                failSync(profileId, p, reason, failureDetail(t))
+                when (hostKeyOutcome) {
+                    HostKeyOutcome.TIMED_OUT ->
+                        failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
+                    HostKeyOutcome.DECLINED ->
+                        failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
+                    else -> failSync(profileId, p, mapException(t), failureDetail(t))
+                }
                 return
             }
             handle = opened
@@ -159,7 +174,11 @@ open class SyncEngine(
                     return
                 }
                 HostKeyOutcome.DECLINED -> {
-                    failSync(profileId, p, SyncState.Reason.AUTH, "Host key for ${p.host}:${p.sshPort} was declined by the user")
+                    failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
+                    return
+                }
+                HostKeyOutcome.TIMED_OUT -> {
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
                     return
                 }
                 HostKeyOutcome.APPROVED -> Unit
@@ -261,7 +280,13 @@ open class SyncEngine(
     private fun failureDetail(t: Throwable): String =
         t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
 
-    private enum class HostKeyOutcome { APPROVED, CHANGED, DECLINED }
+    private fun hostKeyDeclinedDetail(profile: Profile): String =
+        "Host key for ${profile.host}:${profile.sshPort} was declined by the user"
+
+    private fun hostKeyTimeoutDetail(profile: Profile): String =
+        "Host key approval for ${profile.host}:${profile.sshPort} timed out; no decision was made"
+
+    private enum class HostKeyOutcome { APPROVED, CHANGED, DECLINED, TIMED_OUT }
 
     private companion object {
         const val LOG_MAX_LINES = 2000

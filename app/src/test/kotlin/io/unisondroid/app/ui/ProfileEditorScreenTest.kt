@@ -124,6 +124,48 @@ class ProfileEditorScreenTest {
     }
 
     @Test
+    fun `save is rejected when no ssh key is available`() {
+        val emptyVault = KeyVault(
+            JsonStore(Files.createTempDirectory("empty-vault").toFile()),
+            XorCipher,
+        )
+        ServiceLocator.keysProvider = { emptyVault }
+        var saved = false
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = null, onSaved = { saved = true })
+            }
+        }
+        awaitEditor()
+        fillRequired()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        compose.onNodeWithTag(VALIDATION_ERROR).assertExists()
+        assertFalse(saved)
+        assertTrue(runBlocking { repository.profiles() }.isEmpty())
+    }
+
+    @Test
+    fun `browse without storage access shows the grant prompt not an empty browser`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorContent(
+                    initial = null,
+                    keys = emptyList(),
+                    onSave = {},
+                    hasLocalAccess = false,
+                )
+            }
+        }
+
+        compose.onNodeWithTag(BROWSE_LOCAL).performScrollTo().performClick()
+
+        compose.onNodeWithTag(GRANT_ACCESS_TAG).assertExists()
+        compose.onNodeWithTag(PATH_CWD).assertDoesNotExist()
+    }
+
+    @Test
     fun `path browser lists children and returns the picked absolute path`() {
         val root = Files.createTempDirectory("path-browser-test").toFile()
         val folder = File(root, "aFolder").apply { mkdirs() }

@@ -5,7 +5,8 @@ synchronization, syncing files between the device and remote hosts over SSH.
 
 ## Status
 
-Early development. Not yet functional.
+Functional for manual, one-tap sync to a Unison 2.53.x server. Distributed as
+signed APKs on GitHub Releases, with F-Droid inclusion pending.
 
 ## Building from source
 

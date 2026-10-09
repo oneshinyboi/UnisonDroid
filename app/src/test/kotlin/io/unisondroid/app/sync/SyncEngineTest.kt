@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -142,6 +144,30 @@ class SyncEngineTest {
         assertTrue(h.runner.starts.isEmpty())
         assertFalse(File(unisonDir, "prof1.prf").exists())
         assertNull(h.hostKeys.known(HOST, SSH_PORT), "declined fingerprint must not be persisted")
+    }
+
+    @Test
+    fun `host key approval timeout fails with TUNNEL not a user decline`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = emptyList())),
+            knownFingerprint = null,
+            hostKeyDecisionTimeoutMs = 100L,
+        )
+        val job = launch { h.engine.requestSync("prof1") }
+        awaitState(h.engine) { it is SyncState.AwaitingHostKey }
+
+        advanceTimeBy(100)
+        runCurrent()
+        withTimeout(10_000) { job.join() }
+
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals("prof1", failed.profileId)
+        assertEquals(SyncState.Reason.TUNNEL, failed.reason)
+        assertTrue(failed.detail.contains("timed out", ignoreCase = true), "detail was: ${failed.detail}")
+        assertFalse(failed.detail.contains("declined", ignoreCase = true), "detail was: ${failed.detail}")
+        assertNull(h.hostKeys.known(HOST, SSH_PORT), "a timed-out decision must not persist a fingerprint")
+        h.tunnel.assertAllClosed()
+        assertTrue(h.runner.starts.isEmpty())
     }
 
     @Test
@@ -373,6 +399,7 @@ class SyncEngineTest {
         knownFingerprint: String? = SERVER_FINGERPRINT,
         binaryAvailable: Boolean = true,
         tunnelPark: CompletableDeferred<Unit>? = null,
+        hostKeyDecisionTimeoutMs: Long = 300_000L,
         onStart: ((Map<String, String>, List<String>) -> Unit)? = null,
     ): Harness {
         if (binaryAvailable) {
@@ -401,6 +428,7 @@ class SyncEngineTest {
             parserFactory = { OutputParser() },
             unisonDir = unisonDir,
             clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
+            hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
         )
         return Harness(engine, repo, vault, hostKeys, tunnel, runner, events, profiles, key.id)
     }

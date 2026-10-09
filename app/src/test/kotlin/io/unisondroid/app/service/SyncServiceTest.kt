@@ -251,6 +251,20 @@ class SyncServiceTest {
         assertTrue("an immediate failure must not wedge the service", shadowOf(service).isStoppedBySelf)
     }
 
+    @Test
+    fun `requestSync returning false stops the service instead of lingering`() {
+        engine.nextResult = false
+
+        val service = startService()
+        pump()
+
+        assertTrue(
+            "the service must not wedge with a stale foreground notification",
+            shadowOf(service).isStoppedBySelf,
+        )
+        assertTrue(shadowOf(service).isForegroundStopped)
+    }
+
     private fun startService(): SyncService {
         val context = RuntimeEnvironment.getApplication() as Context
         controller = Robolectric.buildService(SyncService::class.java, SyncService.intent(context, "prof1"))
@@ -293,11 +307,12 @@ private class TestSyncEngine : SyncEngine(
         private set
     var requestCount = 0
         private set
+    var nextResult = true
 
     override suspend fun requestSync(profileId: String): Boolean {
         requestedProfileId = profileId
         requestCount += 1
-        return true
+        return nextResult
     }
 }
 

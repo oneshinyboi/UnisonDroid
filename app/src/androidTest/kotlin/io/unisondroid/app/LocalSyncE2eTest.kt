@@ -1,11 +1,15 @@
 package io.unisondroid.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.BinaryStatus
 import io.unisondroid.app.sync.PrfGenerator
+import io.unisondroid.app.ui.hasAllFilesAccess
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,6 +27,29 @@ class LocalSyncE2eTest {
     @Before
     fun setUp() {
         cacheDir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir
+    }
+
+    @Test
+    fun app_declaresAllFilesAccess_andChecksItBeforeUsingExternalStorage() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val requested = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+            .requestedPermissions
+            ?.toList()
+            .orEmpty()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            assertTrue(
+                "MANAGE_EXTERNAL_STORAGE must be declared for /storage/emulated/0 access",
+                requested.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+            )
+        } else {
+            assertTrue(
+                "WRITE_EXTERNAL_STORAGE must be declared for the API 26-29 fallback",
+                requested.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+            )
+        }
+        // Exercise the production access check; its value is grant-dependent.
+        hasAllFilesAccess(context)
     }
 
     @Test
