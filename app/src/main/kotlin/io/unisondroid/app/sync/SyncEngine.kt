@@ -47,7 +47,7 @@ sealed interface SyncState {
     }
 }
 
-class SyncEngine(
+open class SyncEngine(
     private val binaryLocator: BinaryLocator,
     private val profiles: ProfileRepository,
     private val keys: KeyVault,
@@ -59,7 +59,7 @@ class SyncEngine(
     private val clock: Clock,
 ) {
     private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
-    val state: StateFlow<SyncState> = _state.asStateFlow()
+    open val state: StateFlow<SyncState> = _state.asStateFlow()
 
     private val syncMutex = Mutex()
 
@@ -69,7 +69,7 @@ class SyncEngine(
     @Volatile
     private var activeJob: Job? = null
 
-    suspend fun requestSync(profileId: String): Boolean {
+    open suspend fun requestSync(profileId: String): Boolean {
         val binary = when (val status = binaryLocator.locate()) {
             is BinaryStatus.Missing -> {
                 _state.value = SyncState.Failed(
@@ -90,11 +90,11 @@ class SyncEngine(
         return true
     }
 
-    suspend fun respondHostKey(approve: Boolean) {
+    open suspend fun respondHostKey(approve: Boolean) {
         pendingDecision?.complete(approve)
     }
 
-    fun cancel() {
+    open fun cancel() {
         activeJob?.cancel()
     }
 

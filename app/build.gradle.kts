@@ -29,7 +29,18 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            all { it.useJUnitPlatform() }
+            all {
+                it.useJUnitPlatform()
+                it.jvmArgs(
+                    "--add-opens=java.base/java.io=ALL-UNNAMED",
+                    "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+                )
+                it.javaLauncher.set(
+                    javaToolchains.launcherFor {
+                        languageVersion.set(JavaLanguageVersion.of(21))
+                    },
+                )
+            }
         }
     }
 }
@@ -53,7 +64,9 @@ dependencies {
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.junit4)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testRuntimeOnly(libs.junit.vintage.engine)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.sshd.core)
     testImplementation(libs.robolectric)
