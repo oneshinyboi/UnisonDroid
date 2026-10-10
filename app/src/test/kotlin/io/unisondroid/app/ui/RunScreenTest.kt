@@ -16,6 +16,8 @@ import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.SyncEngine
+import io.unisondroid.app.sync.SyncMode
+import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
 import io.unisondroid.app.sync.UnisonRunner
@@ -194,7 +196,7 @@ private class FakeSyncEngine : SyncEngine(
         private set
     val hostKeyDecisions = mutableListOf<Boolean>()
 
-    override suspend fun requestSync(profileId: String): Boolean = true
+    override suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome = SyncOutcome.COMPLETED
 
     override suspend fun respondHostKey(approve: Boolean) {
         hostKeyDecisions += approve

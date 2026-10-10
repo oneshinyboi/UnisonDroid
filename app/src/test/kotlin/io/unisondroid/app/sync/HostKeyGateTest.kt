@@ -38,7 +38,7 @@ class HostKeyGateTest {
         val g = HostKeyGate(tool, knownHosts)
         val prompted = mutableListOf<String>()
 
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { fp ->
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { fp ->
             prompted += fp
             true
         }
@@ -58,7 +58,7 @@ class HostKeyGateTest {
         val knownHosts = File(dir, "ssh/known_hosts")
         val g = HostKeyGate(tool, knownHosts)
 
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { false }
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { false }
 
         assertEquals(HostKeyOutcome.Declined("SHA256:ed25519fingerprint"), outcome)
         assertFalse(knownHosts.exists(), "declined approval must not write known_hosts")
@@ -71,7 +71,7 @@ class HostKeyGateTest {
         var outcome: HostKeyOutcome? = null
 
         val job = launch {
-            outcome = g.ensureTrusted("veryshiny.net", 2222, 100L) {
+            outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 100L) {
                 delay(10_000)
                 true
             }
@@ -92,7 +92,7 @@ class HostKeyGateTest {
         }
         val g = gate(tool)
 
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
 
         assertEquals(HostKeyOutcome.Trusted, outcome)
         assertTrue(tool.scanCalls.isEmpty(), "a known host must not be scanned")
@@ -102,7 +102,7 @@ class HostKeyGateTest {
     fun `trusted host is reported without scanning`() = runTest {
         val tool = FakeSshTool().apply { hostIsKnown = true }
         val knownHosts = File(dir, "ssh/known_hosts")
-        val outcome = HostKeyGate(tool, knownHosts).ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
+        val outcome = HostKeyGate(tool, knownHosts).ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
         assertEquals(HostKeyOutcome.Trusted, outcome)
         assertTrue(tool.scanCalls.isEmpty())
         assertEquals(listOf(Triple("veryshiny.net", 2222, knownHosts)), tool.knownCalls)
@@ -113,7 +113,7 @@ class HostKeyGateTest {
         val tool = FakeSshTool().apply { scanException = SshToolException("connection refused") }
         val g = gate(tool)
 
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
 
         assertEquals(HostKeyOutcome.ScanFailed("connection refused"), outcome)
     }
@@ -124,7 +124,7 @@ class HostKeyGateTest {
         val g = gate(tool)
         val prompted = mutableListOf<String>()
 
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { fp ->
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { fp ->
             prompted += fp
             true
         }
@@ -138,8 +138,17 @@ class HostKeyGateTest {
         val tool = FakeSshTool().apply { scannedHostKeys = listOf(ed25519) }
         val g = gate(tool)
 
-        g.ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
+        g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
 
         assertEquals(listOf("veryshiny.net" to 2222), tool.scanCalls)
+    }
+
+    @Test
+    fun `unattended unknown host returns Untrusted without scanning`() = runTest {
+        val tool = FakeSshTool().apply { hostIsKnown = false }
+        val outcome = HostKeyGate(tool, File(dir, "ssh/known_hosts"))
+            .ensureTrusted("veryshiny.net", 2222, interactive = false, decisionTimeoutMs = 300_000L) { true }
+        assertEquals(HostKeyOutcome.Untrusted, outcome)
+        assertTrue(tool.scanCalls.isEmpty())
     }
 }

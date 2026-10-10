@@ -20,6 +20,8 @@ import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.ProcessSshTool
 import io.unisondroid.app.sync.SyncEngine
+import io.unisondroid.app.sync.SyncMode
+import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.UnisonRunner
 import kotlinx.coroutines.launch
@@ -84,7 +86,7 @@ class SyncService : LifecycleService() {
         }
         lifecycleScope.launch {
             val accepted = try {
-                engine.requestSync(profileId)
+                engine.requestSync(profileId, SyncMode.INTERACTIVE) != SyncOutcome.BUSY
             } catch (t: Throwable) {
                 false
             }

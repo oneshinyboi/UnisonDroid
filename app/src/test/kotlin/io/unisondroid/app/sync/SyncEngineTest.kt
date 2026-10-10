@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -53,7 +54,7 @@ class SyncEngineTest {
             onStart = { _, _ -> lockPresentAtRunnerStart = staleLock.exists() },
         )
 
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         withTimeout(10_000) { job.join() }
 
         assertTrue(h.engine.state.value is SyncState.Finished)
@@ -78,7 +79,7 @@ class SyncEngineTest {
         )
         assertEquals(SyncState.Idle, h.engine.state.value)
 
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val syncing = awaitState(h.engine) {
             it is SyncState.Syncing && it.log.lastOrNull() == PROGRESS_LINE
@@ -117,7 +118,7 @@ class SyncEngineTest {
             scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
             knownFingerprint = null,
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val awaiting = awaitState(h.engine) { it is SyncState.AwaitingHostKey }
         assertEquals(SyncState.AwaitingHostKey(profileId = "prof1", fingerprint = SERVER_FINGERPRINT), awaiting)
@@ -140,7 +141,7 @@ class SyncEngineTest {
             scripts = listOf(ScriptedProcess(lines = emptyList())),
             knownFingerprint = null,
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         awaitState(h.engine) { it is SyncState.AwaitingHostKey }
 
         h.engine.respondHostKey(false)
@@ -161,7 +162,7 @@ class SyncEngineTest {
             knownFingerprint = null,
             hostKeyDecisionTimeoutMs = 100L,
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         awaitState(h.engine) { it is SyncState.AwaitingHostKey }
 
         advanceTimeBy(100)
@@ -183,7 +184,7 @@ class SyncEngineTest {
             scannedHostKeys = emptyList(),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
@@ -192,18 +193,38 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `unattended sync with unknown host key skips without scanning or prompting`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))), knownFingerprint = null)
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.UNATTENDED) }
+        assertEquals(SyncOutcome.SKIPPED_UNTRUSTED, outcome)
+        assertTrue(h.runner.starts.isEmpty())
+        assertTrue(h.sshTool.scanCalls.isEmpty(), "unattended must not scan")
+        assertNull(h.repo.get("prof1")?.lastResult, "a skip must not mark the profile failed")
+    }
+
+    @Test
+    fun `changed host key never completes even unattended`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf("Host key verification failed."), exit = 255)),
+        )
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.UNATTENDED) }
+        assertEquals(SyncOutcome.FAILED, outcome)
+        assertEquals(SyncState.Reason.TUNNEL, (h.engine.state.value as SyncState.Failed).reason)
+    }
+
+    @Test
     fun `second request while a sync is running returns false and state remains Syncing`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         awaitState(h.engine) { it is SyncState.Syncing }
         val syncing = h.engine.state.value
 
-        val proceeded = withTimeout(10_000) { h.engine.requestSync("prof2") }
+        val second = withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.UNATTENDED) }
 
-        assertFalse(proceeded)
+        assertEquals(SyncOutcome.BUSY, second)
         assertEquals(syncing, h.engine.state.value, "rejected request must not touch state")
         assertEquals(1, h.runner.starts.size, "rejected request must not start another run")
 
@@ -218,7 +239,7 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         awaitState(h.engine) { it is SyncState.Syncing }
 
         h.engine.cancel()
@@ -237,7 +258,7 @@ class SyncEngineTest {
             binaryAvailable = false,
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
@@ -253,7 +274,7 @@ class SyncEngineTest {
             sshBinaryAvailable = false,
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
@@ -272,7 +293,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.EXIT, failed.reason)
@@ -294,7 +315,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.VERSION, failed.reason)
@@ -312,7 +333,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.LOCAL_PERMISSIONS, failed.reason)
@@ -330,7 +351,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.AUTH, failed.reason)
@@ -350,7 +371,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
@@ -367,7 +388,7 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
@@ -379,7 +400,7 @@ class SyncEngineTest {
             scripts = listOf(ScriptedProcess(lines = listOf("Error: boom"), exit = 1)),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         assertTrue(h.engine.state.value is SyncState.Failed)
         assertFalse(File(sshHome, h.keyId).exists(), "key material must not linger after a failure")
@@ -399,7 +420,7 @@ class SyncEngineTest {
                 ),
             ),
         )
-        val job = launch { h.engine.requestSync("prof1") }
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val syncing = awaitState(h.engine) {
             it is SyncState.Syncing && it.log.lastOrNull() == lastLine
@@ -423,9 +444,9 @@ class SyncEngineTest {
             profileIds = listOf("prof1", "prof2", "prof3"),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1") }
-        withTimeout(10_000) { h.engine.requestSync("prof2") }
-        withTimeout(10_000) { h.engine.requestSync("prof3") }
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.INTERACTIVE) }
+        withTimeout(10_000) { h.engine.requestSync("prof3", SyncMode.INTERACTIVE) }
 
         assertEquals(SyncResult.OK, h.repo.get("prof1")?.lastResult)
         assertEquals(SyncResult.WARNINGS, h.repo.get("prof2")?.lastResult)

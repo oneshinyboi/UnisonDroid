@@ -13,6 +13,8 @@ import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.SyncEngine
+import io.unisondroid.app.sync.SyncMode
+import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
 import io.unisondroid.app.sync.UnisonRunner
@@ -305,10 +307,10 @@ private class TestSyncEngine : SyncEngine(
         private set
     var nextResult = true
 
-    override suspend fun requestSync(profileId: String): Boolean {
+    override suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
         requestedProfileId = profileId
         requestCount += 1
-        return nextResult
+        return if (nextResult) SyncOutcome.COMPLETED else SyncOutcome.BUSY
     }
 }
 

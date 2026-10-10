@@ -43,6 +43,12 @@ sealed interface SyncState {
     }
 }
 
+/** Whether a sync may prompt the user for an unknown host key. */
+enum class SyncMode { INTERACTIVE, UNATTENDED }
+
+/** Outcome of a sync request, so a worker can distinguish results without parsing state. */
+enum class SyncOutcome { COMPLETED, FAILED, SKIPPED_UNTRUSTED, BUSY }
+
 open class SyncEngine(
     private val binaryLocator: BinaryLocator,
     private val profiles: ProfileRepository,
@@ -66,7 +72,7 @@ open class SyncEngine(
     @Volatile
     private var activeJob: Job? = null
 
-    open suspend fun requestSync(profileId: String): Boolean {
+    open suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
         val binary = when (val status = binaryLocator.locate()) {
             is BinaryStatus.Missing -> {
                 _state.value = SyncState.Failed(
@@ -74,7 +80,7 @@ open class SyncEngine(
                     reason = SyncState.Reason.BINARY_MISSING,
                     detail = "libunison.so not found in the native library directory",
                 )
-                return true
+                return SyncOutcome.FAILED
             }
             is BinaryStatus.Available -> status.path
         }
@@ -85,17 +91,16 @@ open class SyncEngine(
                     reason = SyncState.Reason.BINARY_MISSING,
                     detail = "libssh.so not found in the native library directory",
                 )
-                return true
+                return SyncOutcome.FAILED
             }
             is BinaryStatus.Available -> status.path
         }
-        if (!syncMutex.tryLock()) return false
+        if (!syncMutex.tryLock()) return SyncOutcome.BUSY
         try {
-            runSync(profileId, binary, sshBinary)
+            return runSync(profileId, binary, sshBinary, mode)
         } finally {
             syncMutex.unlock()
         }
-        return true
     }
 
     open suspend fun respondHostKey(approve: Boolean) {
@@ -116,7 +121,7 @@ open class SyncEngine(
         unisonDir.listFiles { f -> f.isFile && STALE_LOCK.matches(f.name) }?.forEach { it.delete() }
     }
 
-    private suspend fun runSync(profileId: String, binary: File, sshBinary: File) {
+    private suspend fun runSync(profileId: String, binary: File, sshBinary: File, mode: SyncMode): SyncOutcome {
         activeJob = currentCoroutineContext()[Job]
         clearStaleLocks()
         var profile: Profile? = null
@@ -126,14 +131,19 @@ open class SyncEngine(
         try {
             val p = profiles.get(profileId) ?: run {
                 _state.value = SyncState.Failed(profileId, SyncState.Reason.UNKNOWN, "Profile not found: $profileId")
-                return
+                return SyncOutcome.FAILED
             }
             profile = p
             _state.value = SyncState.Connecting(profileId)
 
             val knownHosts = File(sshHome, "known_hosts")
             val outcome = HostKeyGate(sshTool, knownHosts)
-                .ensureTrusted(p.host, p.sshPort, hostKeyDecisionTimeoutMs) { fingerprint ->
+                .ensureTrusted(
+                    host = p.host,
+                    port = p.sshPort,
+                    interactive = mode == SyncMode.INTERACTIVE,
+                    decisionTimeoutMs = hostKeyDecisionTimeoutMs,
+                ) { fingerprint ->
                     val pending = CompletableDeferred<Boolean>()
                     pendingDecision = pending
                     _state.value = SyncState.AwaitingHostKey(profileId, fingerprint)
@@ -145,17 +155,23 @@ open class SyncEngine(
                 }
             when (outcome) {
                 is HostKeyOutcome.Trusted -> Unit
+                is HostKeyOutcome.Untrusted -> {
+                    // Unattended syncs must never prompt; surface a Failed state so
+                    // the user sees why, but leave the profile's lastResult untouched.
+                    _state.value = SyncState.Failed(profileId, SyncState.Reason.AUTH, hostKeyNeedsApprovalDetail(p))
+                    return SyncOutcome.SKIPPED_UNTRUSTED
+                }
                 is HostKeyOutcome.Declined -> {
                     failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
-                    return
+                    return SyncOutcome.FAILED
                 }
                 is HostKeyOutcome.TimedOut -> {
                     failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
-                    return
+                    return SyncOutcome.FAILED
                 }
                 is HostKeyOutcome.ScanFailed -> {
                     failSync(profileId, p, SyncState.Reason.TUNNEL, "Could not scan host keys: ${outcome.detail}")
-                    return
+                    return SyncOutcome.FAILED
                 }
             }
 
@@ -207,17 +223,36 @@ open class SyncEngine(
 
             val summary = parser.finalize(exit)
             when {
-                versionMismatch != null -> failSync(profileId, p, SyncState.Reason.VERSION, versionMismatch!!)
-                hostKeyFailure != null -> failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyFailure!!)
-                authFailure != null -> failSync(profileId, p, SyncState.Reason.AUTH, authFailure!!)
-                lostConnection != null -> failSync(profileId, p, SyncState.Reason.TUNNEL, lostConnection!!)
-                permissionDenied != null -> failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!)
-                exit != 0 -> failSync(profileId, p, SyncState.Reason.EXIT, logTail(log))
+                versionMismatch != null -> {
+                    failSync(profileId, p, SyncState.Reason.VERSION, versionMismatch!!)
+                    return SyncOutcome.FAILED
+                }
+                hostKeyFailure != null -> {
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyFailure!!)
+                    return SyncOutcome.FAILED
+                }
+                authFailure != null -> {
+                    failSync(profileId, p, SyncState.Reason.AUTH, authFailure!!)
+                    return SyncOutcome.FAILED
+                }
+                lostConnection != null -> {
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, lostConnection!!)
+                    return SyncOutcome.FAILED
+                }
+                permissionDenied != null -> {
+                    failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!)
+                    return SyncOutcome.FAILED
+                }
+                exit != 0 -> {
+                    failSync(profileId, p, SyncState.Reason.EXIT, logTail(log))
+                    return SyncOutcome.FAILED
+                }
                 else -> {
                     val result = if (summary.failed == 0 && summary.conflicts == 0) SyncResult.OK else SyncResult.WARNINGS
                     profiles.save(p.copy(lastSyncedAt = clock.millis(), lastResult = result))
                     success = true
                     _state.value = SyncState.Finished(profileId, summary)
+                    return SyncOutcome.COMPLETED
                 }
             }
         } catch (ce: CancellationException) {
@@ -230,6 +265,7 @@ open class SyncEngine(
             withContext(NonCancellable) {
                 failSync(profileId, profile, mapException(t), failureDetail(t))
             }
+            return SyncOutcome.FAILED
         } finally {
             if (!success) process?.kill()
             keyFile?.delete()
@@ -273,6 +309,10 @@ open class SyncEngine(
 
     private fun hostKeyTimeoutDetail(profile: Profile): String =
         "Host key approval for ${profile.host}:${profile.sshPort} timed out; no decision was made"
+
+    private fun hostKeyNeedsApprovalDetail(profile: Profile): String =
+        "Host key for ${profile.host}:${profile.sshPort} needs approval; " +
+            "open the app and approve it before this profile can sync in the background"
 
     private companion object {
         const val LOG_MAX_LINES = 2000

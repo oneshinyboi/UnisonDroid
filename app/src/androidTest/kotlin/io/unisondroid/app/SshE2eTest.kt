@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -64,7 +65,7 @@ class SshE2eTest {
         repo.save(profile)
 
         val engine = ServiceLocator.engine(context)
-        val job = launch { engine.requestSync(profile.id) }
+        val job = launch { engine.requestSync(profile.id, SyncMode.INTERACTIVE) }
 
         val deadline = System.currentTimeMillis() + 300_000
         while (System.currentTimeMillis() < deadline) {

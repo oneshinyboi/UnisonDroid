@@ -9,6 +9,7 @@ import java.nio.file.attribute.PosixFilePermissions
 
 sealed interface HostKeyOutcome {
     data object Trusted : HostKeyOutcome
+    data object Untrusted : HostKeyOutcome
     data class Declined(val fingerprint: String) : HostKeyOutcome
     data class TimedOut(val fingerprint: String) : HostKeyOutcome
     data class ScanFailed(val detail: String) : HostKeyOutcome
@@ -27,10 +28,14 @@ class HostKeyGate(
     suspend fun ensureTrusted(
         host: String,
         port: Int,
+        interactive: Boolean,
         decisionTimeoutMs: Long,
         prompt: suspend (fingerprint: String) -> Boolean,
     ): HostKeyOutcome {
         if (tool.isHostKnown(host, port, knownHostsFile)) return HostKeyOutcome.Trusted
+        // An unattended sync must never scan or prompt: it has no UI to answer,
+        // so an unknown host is reported as untrusted for a later interactive run.
+        if (!interactive) return HostKeyOutcome.Untrusted
 
         val entry = try {
             val scanned = tool.scanHostKeys(host, port)
