@@ -1,5 +1,10 @@
 package io.unisondroid.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.SshKey
 import io.unisondroid.app.data.Transport
@@ -75,6 +81,26 @@ fun ProfileEditorScreen(
     var hasAccess by remember { mutableStateOf(hasAllFilesAccess(context)) }
     val requestAccess = rememberAllFilesAccessRequest { hasAccess = it }
 
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {}
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {}
+    // Auto-sync runs in the background, so when the user turns it on we ask for the
+    // notification permission (to promote work to a foreground service) and, if the
+    // app is still battery-optimized, prompt for the exemption that lets it survive Doze.
+    val onAutoSyncEnabled: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        batteryExemptionIntent(context)?.let { batteryLauncher.launch(it) }
+    }
+
     val loaded by produceState<EditorData?>(initialValue = null, repository, vault, profileId) {
         value = EditorData(
             profile = profileId?.let { repository.get(it) },
@@ -103,6 +129,7 @@ fun ProfileEditorScreen(
         },
         hasLocalAccess = hasAccess,
         onRequestAccess = requestAccess,
+        onAutoSyncEnabled = onAutoSyncEnabled,
         modifier = modifier,
     )
 }
@@ -119,6 +146,7 @@ internal fun ProfileEditorContent(
     startDir: File = File("/storage/emulated/0"),
     hasLocalAccess: Boolean = true,
     onRequestAccess: () -> Unit = {},
+    onAutoSyncEnabled: () -> Unit = {},
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
     var localRoot by remember(initial) { mutableStateOf(initial?.localRoot ?: "") }
@@ -323,7 +351,10 @@ internal fun ProfileEditorContent(
                 Text(text = "Sync automatically")
                 Switch(
                     checked = autoSyncEnabled,
-                    onCheckedChange = { autoSyncEnabled = it },
+                    onCheckedChange = { enabled ->
+                        autoSyncEnabled = enabled
+                        if (enabled) onAutoSyncEnabled()
+                    },
                     modifier = Modifier.testTag(FIELD_AUTO_SYNC),
                 )
             }
