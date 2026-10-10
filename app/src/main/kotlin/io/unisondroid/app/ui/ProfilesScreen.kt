@@ -244,11 +244,11 @@ private fun mirrorTitle(variant: SyncVariant): String =
 
 private fun mirrorWarning(profile: Profile, variant: SyncVariant): String =
     if (variant == SyncVariant.MIRROR_TO_SERVER) {
-        "This makes the server an exact copy of \"${profile.name}\" and deletes files on the " +
-            "server that are not on this phone. This cannot be undone."
+        "This makes the server an exact copy of this phone's folder (${profile.localRoot}). " +
+            "Files on the server that are not here will be permanently deleted."
     } else {
-        "This makes this phone an exact copy of \"${profile.name}\" and deletes local files " +
-            "that are not on the server. This cannot be undone."
+        "This makes this phone an exact copy of the server folder (${profile.remoteRoot}). " +
+            "Local files that are not on the server will be permanently deleted."
     }
 
 @Composable

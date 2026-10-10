@@ -22,6 +22,19 @@ data class SyncSummary(
     val transferred: Int,
     val conflicts: List<ConflictRecord>,
     val failed: List<FailedRecord>,
+    /** Count of files kept by the user's own nodeletion/noupdate/nocreation protections. */
+    val benignSkips: Int = 0,
+)
+
+/**
+ * Reasons Unison reports as `skipped:` when the user's own protections (`nodeletion`,
+ * `noupdate`, `nocreation` and their `*partial` forms) stopped a change. These are
+ * intentional and benign, not conflicts (Unison 2.53.8 `src/recon.ml`, `shouldCancel`).
+ */
+val BENIGN_SKIP_REASONS = setOf(
+    "would delete a file with nodeletion or nodeletionpartial set",
+    "would update a file with noupdate or noupdatepartial set",
+    "would create a file with nocreation or nocreationpartial set",
 )
 
 /**
@@ -54,6 +67,7 @@ class OutputParser {
     private val failedWithoutPath = mutableListOf<FailedRecord>()
     private var lastProgressCount = 0
     private var transferredFromSummary: Int? = null
+    private var benignSkips = 0
 
     // The conflict display block: a recon line (`<-?->`/`<=?=>`) sets the path, then
     // up to two detail lines follow (first side = local, second = remote). A blank
@@ -97,6 +111,7 @@ class OutputParser {
             // same transient failure, so dedupe path-bearing entries by path. Pathless
             // Error lines have no key, so identical messages are deduped instead.
             failed = failedByPath.values.toList() + failedWithoutPath,
+            benignSkips = benignSkips,
         )
     }
 
@@ -131,6 +146,13 @@ class OutputParser {
         SKIP.find(line)?.let { match ->
             val path = match.groupValues[1].trim()
             val reason = match.groupValues[2].trim()
+            // A path the user's own nodeletion/noupdate/nocreation preference kept in place is an
+            // intentional protection, not a conflict. Count it so a run whose only skips are these
+            // still finishes OK rather than being flagged as a warning.
+            if (reason in BENIGN_SKIP_REASONS) {
+                benignSkips++
+                return emptyList()
+            }
             // Problem skips (not a conflict reason) are still surfaced, but marked
             // unresolvable so the resolver can leave them alone.
             conflictsByPath[path] = (conflictsByPath[path] ?: ConflictRecord(path = path)).copy(

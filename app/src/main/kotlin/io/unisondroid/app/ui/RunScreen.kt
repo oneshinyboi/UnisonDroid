@@ -68,6 +68,7 @@ fun RunScreen(
     val state by engine.state.collectAsState()
 
     LaunchedEffect(profileId, variant) {
+        engine.beginRun()
         SyncScheduler(context).syncNow(profileId, variant)
     }
 
@@ -131,7 +132,11 @@ internal fun RunContent(
                     if (state.reason == SyncState.Reason.BINARY_MISSING) {
                         EngineMissingCard(state.detail)
                     } else {
-                        FailureCard(state, onGrantStorageAccess)
+                        FailureCard(
+                            state = state,
+                            onGrantStorageAccess = onGrantStorageAccess,
+                            title = if (variant.isDiagnostic) "Connection test failed" else "Sync failed",
+                        )
                     }
 
                 is SyncState.AwaitingHostKey -> StatusLine("Waiting for host key approval…")
@@ -239,13 +244,17 @@ private fun detailLine(path: String, detail: String): String =
     if (detail.isBlank()) path else "$path — $detail"
 
 @Composable
-private fun FailureCard(state: SyncState.Failed, onGrantStorageAccess: () -> Unit) {
+private fun FailureCard(
+    state: SyncState.Failed,
+    onGrantStorageAccess: () -> Unit,
+    title: String = "Sync failed",
+) {
     Card(modifier = Modifier.fillMaxWidth().testTag(RUN_FAILURE_TAG)) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(text = "Sync failed", style = MaterialTheme.typography.titleLarge)
+            Text(text = title, style = MaterialTheme.typography.titleLarge)
             Text(text = reasonLabel(state.reason), style = MaterialTheme.typography.bodyMedium)
             Text(text = state.detail, style = MaterialTheme.typography.bodySmall)
             if (state.reason == SyncState.Reason.LOCAL_PERMISSIONS) {

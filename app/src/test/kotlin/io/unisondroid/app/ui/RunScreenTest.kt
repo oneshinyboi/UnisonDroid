@@ -27,8 +27,6 @@ import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -225,6 +223,38 @@ class RunScreenTest {
     }
 
     @Test
+    fun `a stale terminal state is not shown before the new run starts`() {
+        engine.states.value = SyncState.Finished(
+            profileId = "p1",
+            summary = SyncSummary(transferred = 9, conflicts = emptyList(), failed = emptyList()),
+        )
+
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.TEST_CONNECTION) }
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RUN_CONNECTION_OK_TAG).assertDoesNotExist()
+        compose.onNodeWithText("9 transferred", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a failed connection test uses a connection-specific failure title`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.TEST_CONNECTION) }
+        }
+
+        engine.states.value = SyncState.Failed(
+            profileId = "p1",
+            reason = SyncState.Reason.AUTH,
+            detail = "Permission denied",
+        )
+        awaitTag(RUN_FAILURE_TAG)
+
+        compose.onNodeWithText("Connection test failed").assertExists()
+    }
+
+    @Test
     fun `failed with binary missing renders an engine-missing card not the raw detail`() {
         compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
 
@@ -282,8 +312,8 @@ private class FakeSyncEngine : SyncEngine(
     File("/nonexistent/ssh"),
     Clock.systemUTC(),
 ) {
-    val states = MutableStateFlow<SyncState>(SyncState.Idle)
-    override val state: StateFlow<SyncState> = states.asStateFlow()
+    /** The engine's own state flow, exposed so tests can drive and observe it. */
+    val states: MutableStateFlow<SyncState> get() = _state
 
     var cancelled = false
         private set

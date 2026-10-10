@@ -66,7 +66,7 @@ open class SyncEngine(
     // stays Android-free and tests can stub it.
     private val removableVolume: (String) -> Boolean = { false },
 ) {
-    private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
+    protected val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
 
     private val syncMutex = Mutex()
@@ -143,6 +143,17 @@ open class SyncEngine(
 
     open fun cancel() {
         activeJob?.cancel()
+    }
+
+    /**
+     * Clears a terminal state left by a previous run so a freshly opened run screen does not
+     * show stale results. Never disturbs a run that is currently in progress.
+     */
+    open fun beginRun() {
+        when (_state.value) {
+            is SyncState.Finished, is SyncState.Failed, SyncState.Idle -> _state.value = SyncState.Idle
+            else -> Unit
+        }
     }
 
     // The bundled unison locks each archive via an O_EXCL file named
@@ -321,7 +332,10 @@ open class SyncEngine(
                     val result = when {
                         hasHardFailure -> SyncResult.FAILED
                         summary.conflicts.isNotEmpty() -> SyncResult.WARNINGS
-                        summary.failed.isNotEmpty() || exit != 0 -> SyncResult.WARNINGS
+                        summary.failed.isNotEmpty() -> SyncResult.WARNINGS
+                        // A non-zero exit is a warning unless the only skipped items were the
+                        // user's own nodeletion/noupdate/nocreation protections (benign).
+                        exit != 0 && summary.benignSkips == 0 -> SyncResult.WARNINGS
                         else -> SyncResult.OK
                     }
                     if (recordResult) {

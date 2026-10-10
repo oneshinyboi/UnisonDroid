@@ -882,6 +882,80 @@ class SyncEngineTest {
         assertNull(h.repo.get("prof1")?.lastResult, "a failed connection test must not mark the profile failed")
     }
 
+    @Test
+    fun `copy run that protects target files finishes OK without listing conflicts`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "  skipped: extra/old.txt (would delete a file with nodeletion or nodeletionpartial set)",
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 1 skipped, 0 failed)",
+                    ),
+                    exit = 1,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.COPY_TO_SERVER)
+        }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertTrue(
+            finished.summary.conflicts.isEmpty(),
+            "a deliberately kept file must not be reported as a conflict; got ${finished.summary.conflicts}",
+        )
+        assertEquals(SyncResult.OK, h.repo.get("prof1")?.lastResult)
+    }
+
+    @Test
+    fun `beginRun clears a terminal state left by a previous run`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertTrue(h.engine.state.value is SyncState.Finished)
+
+        h.engine.beginRun()
+
+        assertEquals(SyncState.Idle, h.engine.state.value)
+    }
+
+    @Test
+    fun `beginRun leaves an in-progress run untouched`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
+        )
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        awaitState(h.engine) { it is SyncState.Syncing }
+
+        h.engine.beginRun()
+
+        assertTrue(h.engine.state.value is SyncState.Syncing, "an in-progress run must not be reset")
+
+        gate.complete(Unit)
+        withTimeout(10_000) { job.join() }
+    }
+
+    @Test
+    fun `test connection with no summary output still finishes without recording`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf("Contacting server...", "Connected [//sync.example.com//srv/sync]"),
+                    exit = 0,
+                ),
+            ),
+        )
+
+        val outcome = withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.TEST_CONNECTION)
+        }
+
+        assertEquals(SyncOutcome.COMPLETED, outcome)
+        assertTrue(h.engine.state.value is SyncState.Finished)
+        assertNull(h.repo.get("prof1")?.lastResult, "a connection test must not record a sync result")
+    }
+
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =
         withTimeout(10_000) { engine.state.first(predicate) }
 

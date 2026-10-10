@@ -25,8 +25,6 @@ import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -176,8 +174,8 @@ private class NoopEngine : SyncEngine(
     File("/nonexistent/ssh"),
     Clock.systemUTC(),
 ) {
-    val states = MutableStateFlow<SyncState>(SyncState.Idle)
-    override val state: StateFlow<SyncState> = states.asStateFlow()
+    /** The engine's own state flow, exposed so tests can drive and observe it. */
+    val states: MutableStateFlow<SyncState> get() = _state
 }
 
 private object NavigationIdentityCipher : KeyCipher {
