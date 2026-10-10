@@ -17,17 +17,17 @@ env:
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
   NDK_VERSION: "29.0.14206865"
   OCAML_VERSION: "4.14.2"
-  UNISON_VERSION: "v2.53.8"
   OPENSSH_VERSION: "10.2p1"
 
 jobs:
   native:
-    name: native (${{ matrix.abi }})
+    name: native (${{ matrix.abi }}, ${{ matrix.unison }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         abi: [arm64-v8a, x86_64]
+        unison: [v2.54.0, v2.53.8]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,11 +51,13 @@ jobs:
           path: |
             ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
             native/.build
-          key: native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-openssh${{ env.OPENSSH_VERSION }}-${{ hashFiles('native/build-unison.sh', 'native/build-openssh.sh') }}
+          key: native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ matrix.unison }}-openssh${{ env.OPENSSH_VERSION }}-${{ hashFiles('native/build-unison.sh', 'native/build-openssh.sh', 'native/unison-versions.txt') }}
           restore-keys: |
-            native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ env.UNISON_VERSION }}-openssh${{ env.OPENSSH_VERSION }}-
+            native-${{ runner.os }}-ndk${{ env.NDK_VERSION }}-ocaml${{ env.OCAML_VERSION }}-unison${{ matrix.unison }}-openssh${{ env.OPENSSH_VERSION }}-
 
-      - name: Cross-compile libunison.so (${{ matrix.abi }})
+      - name: Cross-compile libunison.so (${{ matrix.abi }}, ${{ matrix.unison }})
+        env:
+          UNISON_VERSION: ${{ matrix.unison }}
         run: bash native/build-unison.sh ${{ matrix.abi }}
 
       - name: Cross-compile openssh (${{ matrix.abi }})
@@ -65,15 +67,17 @@ jobs:
         run: |
           set -euo pipefail
           d=app/src/main/jniLibs/${{ matrix.abi }}
-          for b in libunison.so libssh.so libssh-keygen.so libssh-keyscan.so; do
+          for b in libssh.so libssh-keygen.so libssh-keyscan.so; do
             test -f "$d/$b" || { echo "::error::missing $d/$b"; exit 1; }
           done
+          count=$(find "$d" -maxdepth 1 -name 'libunison_*.so' | wc -l)
+          test "$count" -ge 1 || { echo "::error::no libunison_*.so in $d"; exit 1; }
 
-      - name: Upload jniLibs (${{ matrix.abi }})
+      - name: Upload jniLibs (${{ matrix.abi }}, ${{ matrix.unison }})
         uses: actions/upload-artifact@v4
         with:
-          name: jniLibs-${{ matrix.abi }}
-          path: app/src/main/jniLibs/${{ matrix.abi }}
+          name: jniLibs-${{ matrix.abi }}-${{ matrix.unison }}
+          path: app/src/main/jniLibs
           if-no-files-found: error
           retention-days: 7
 
@@ -124,17 +128,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Download jniLibs (arm64-v8a)
+      - name: Download jniLibs
         uses: actions/download-artifact@v4
         with:
-          name: jniLibs-arm64-v8a
-          path: app/src/main/jniLibs/arm64-v8a
-
-      - name: Download jniLibs (x86_64)
-        uses: actions/download-artifact@v4
-        with:
-          name: jniLibs-x86_64
-          path: app/src/main/jniLibs/x86_64
+          pattern: jniLibs-*
+          merge-multiple: true
+          path: app/src/main/jniLibs
 
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug
@@ -171,17 +170,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Download jniLibs (arm64-v8a)
+      - name: Download jniLibs
         uses: actions/download-artifact@v4
         with:
-          name: jniLibs-arm64-v8a
-          path: app/src/main/jniLibs/arm64-v8a
-
-      - name: Download jniLibs (x86_64)
-        uses: actions/download-artifact@v4
-        with:
-          name: jniLibs-x86_64
-          path: app/src/main/jniLibs/x86_64
+          pattern: jniLibs-*
+          merge-multiple: true
+          path: app/src/main/jniLibs
 
       - name: Enable KVM
         run: |
