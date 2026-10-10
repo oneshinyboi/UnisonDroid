@@ -47,6 +47,7 @@ import io.unisondroid.app.data.SshKey
 import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
+import io.unisondroid.app.sync.UnisonInfo
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -63,6 +64,7 @@ const val FIELD_SERVER_CMD = "editor-serverCommand"
 const val FIELD_AUTO_SYNC = "editor-autoSync"
 const val FIELD_INTERVAL = "editor-autoSyncInterval"
 const val FIELD_CONFLICT_POLICY = "editor-conflictPolicy"
+const val FIELD_UNISON_VERSION = "editor-unisonVersion"
 const val BROWSE_LOCAL = "editor-browseLocal"
 const val SAVE_BUTTON = "editor-save"
 const val VALIDATION_ERROR = "editor-validationError"
@@ -210,6 +212,10 @@ internal fun ProfileEditorContent(
         mutableStateOf(initial?.conflictPolicy ?: ConflictPolicy.SKIP)
     }
     var conflictMenu by remember { mutableStateOf(false) }
+    var unisonVersion by remember(initial) {
+        mutableStateOf(UnisonInfo.forVersion(initial?.unisonVersion.orEmpty()).version)
+    }
+    var versionMenu by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var browsing by remember { mutableStateOf(false) }
     var keyMenu by remember { mutableStateOf(false) }
@@ -244,6 +250,7 @@ internal fun ProfileEditorContent(
                 ignorePatterns = ignoreText.split('\n').map { it.trim() }.filter { it.isNotEmpty() },
                 advancedPrefs = advanced,
                 conflictPolicy = conflictPolicy,
+                unisonVersion = unisonVersion,
                 autoSyncEnabled = autoSyncEnabled,
                 autoSyncIntervalMinutes = intervalMinutes,
                 lastSyncedAt = initial?.lastSyncedAt,
@@ -344,6 +351,24 @@ internal fun ProfileEditorContent(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag(FIELD_SERVER_CMD),
             )
+
+            Box {
+                OutlinedButton(
+                    onClick = { versionMenu = true },
+                    modifier = Modifier.fillMaxWidth().testTag(FIELD_UNISON_VERSION),
+                ) { Text(text = "Unison version: $unisonVersion") }
+                DropdownMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
+                    UnisonInfo.BUNDLED.forEach { bundled ->
+                        DropdownMenuItem(
+                            text = { Text(bundled.version) },
+                            onClick = {
+                                unisonVersion = bundled.version
+                                versionMenu = false
+                            },
+                        )
+                    }
+                }
+            }
 
             Box {
                 OutlinedButton(

@@ -20,6 +20,7 @@ import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.sync.FakeSshTool
+import io.unisondroid.app.sync.UnisonInfo
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -371,6 +372,30 @@ class ProfileEditorScreenTest {
             conflicts,
             runBlocking { repository.get("p1")!!.lastConflicts },
         )
+    }
+
+    @Test
+    fun `new profiles default to the newest bundled unison version`() {
+        compose.setContent { UnisonDroidTheme { ProfileEditorScreen(profileId = null, onSaved = {}) } }
+        awaitEditor()
+        fillRequired()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        assertEquals(UnisonInfo.DEFAULT.version, awaitSavedProfile().unisonVersion)
+    }
+
+    @Test
+    fun `unison version selection round-trips into the saved profile`() {
+        compose.setContent { UnisonDroidTheme { ProfileEditorScreen(profileId = null, onSaved = {}) } }
+        awaitEditor()
+        fillRequired()
+
+        compose.onNodeWithTag(FIELD_UNISON_VERSION).performScrollTo().performClick()
+        compose.onNodeWithText("2.53.8").performClick()
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        assertEquals("2.53.8", awaitSavedProfile().unisonVersion)
     }
 
     private fun fillRequired() {
