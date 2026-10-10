@@ -54,7 +54,7 @@ object PrfGenerator {
         ConflictPolicy.KEEP_BOTH -> listOf("prefer = newer", "copyonconflict = true")
     }
 
-    private fun sshRoot(profile: Profile): String =
+    internal fun sshRoot(profile: Profile): String =
         "ssh://${profile.user}@${profile.host}/${profile.remoteRoot}"
 
     private const val DEFAULT_SERVER_COMMAND = "unison"
