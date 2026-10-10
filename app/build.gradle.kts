@@ -94,6 +94,7 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.tink.android)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(platform(libs.androidx.compose.bom))

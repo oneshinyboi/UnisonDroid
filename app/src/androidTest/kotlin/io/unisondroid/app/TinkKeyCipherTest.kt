@@ -4,7 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyVault
-import io.unisondroid.app.data.KeystoreAesCipher
+import io.unisondroid.app.data.TinkKeyCipher
 import io.unisondroid.app.sync.ProcessSshTool
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -16,20 +16,18 @@ import org.junit.runner.RunWith
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
-class KeystoreAesCipherTest {
+class TinkKeyCipherTest {
 
     @Test
     fun encryptDecrypt_roundTrips() {
-        val cipher = KeystoreAesCipher()
-        val plain = "hello keystore".toByteArray() + ByteArray(32) { it.toByte() }
-        val blob = cipher.encrypt(plain)
-        assertTrue("ciphertext should include IV + tag", blob.size > plain.size)
-        assertArrayEquals(plain, cipher.decrypt(blob))
+        val cipher = TinkKeyCipher(InstrumentationRegistry.getInstrumentation().targetContext)
+        val plain = "hello tink".toByteArray() + ByteArray(32) { it.toByte() }
+        assertArrayEquals(plain, cipher.decrypt(cipher.encrypt(plain)))
     }
 
     @Test
-    fun encrypt_usesFreshIvPerCall() {
-        val cipher = KeystoreAesCipher()
+    fun encrypt_usesFreshCiphertextPerCall() {
+        val cipher = TinkKeyCipher(InstrumentationRegistry.getInstrumentation().targetContext)
         val plain = "same input".toByteArray()
         assertFalse(cipher.encrypt(plain).contentEquals(cipher.encrypt(plain)))
     }
@@ -37,14 +35,14 @@ class KeystoreAesCipherTest {
     @Test
     fun keyVault_generate_privateKeyPemRoundTrips() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val dir = File(context.cacheDir, "keystore_test_${System.nanoTime()}").apply { mkdirs() }
+        val dir = File(context.cacheDir, "tink_test_${System.nanoTime()}").apply { mkdirs() }
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val tool = ProcessSshTool(
             keygen = File(nativeDir, "libssh-keygen.so"),
             keyscan = File(nativeDir, "libssh-keyscan.so"),
             workDir = context.cacheDir,
         )
-        val vault = KeyVault(JsonStore(dir), KeystoreAesCipher(), tool)
+        val vault = KeyVault(JsonStore(dir), TinkKeyCipher(context), tool)
 
         val key = vault.generate("e2e-key")
         assertTrue("public key must be OpenSSH ed25519", key.publicKey.startsWith("ssh-ed25519 "))

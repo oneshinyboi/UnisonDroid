@@ -14,8 +14,8 @@ import androidx.lifecycle.lifecycleScope
 import io.unisondroid.app.MainActivity
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyVault
-import io.unisondroid.app.data.KeystoreAesCipher
 import io.unisondroid.app.data.ProfileRepository
+import io.unisondroid.app.data.TinkKeyCipher
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.ProcessSshTool
@@ -279,7 +279,7 @@ object ServiceLocator {
         ProfileRepository(store(context))
 
     private fun buildKeys(context: Context): KeyVault =
-        KeyVault(store(context), KeystoreAesCipher(), sshTool(context))
+        KeyVault(store(context), TinkKeyCipher(context), sshTool(context))
 
     private fun sshTool(context: Context): ProcessSshTool {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)

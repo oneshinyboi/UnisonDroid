@@ -3,10 +3,10 @@ package io.unisondroid.app
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.JsonStore
-import io.unisondroid.app.data.KeystoreAesCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
+import io.unisondroid.app.data.TinkKeyCipher
 import io.unisondroid.app.data.Transport
 import io.unisondroid.app.sync.ProcessSshTool
 import kotlinx.coroutines.runBlocking
@@ -27,7 +27,7 @@ class E2eProvisioningTest {
             keyscan = File(nativeDir, "libssh-keyscan.so"),
             workDir = context.cacheDir,
         )
-        val vault = KeyVault(store, KeystoreAesCipher(), tool)
+        val vault = KeyVault(store, TinkKeyCipher(context), tool)
         val key = vault.keys().firstOrNull { it.name == KEY_NAME } ?: vault.generate(KEY_NAME)
         val profiles = ProfileRepository(store)
         profiles.save(

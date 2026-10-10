@@ -8,6 +8,7 @@ composeBom = "2026.06.01"
 navigationCompose = "2.9.4"
 kotlinxSerializationJson = "1.11.0"
 kotlinxCoroutines = "1.11.0"
+tink = "1.16.0"
 junitBom = "5.14.4"
 robolectric = "4.17"
 junit4 = "4.13.2"
@@ -29,6 +30,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 junit-bom = { group = "org.junit", name = "junit-bom", version.ref = "junitBom" }
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter" }
 junit-vintage-engine = { group = "org.junit.vintage", name = "junit-vintage-engine" }
