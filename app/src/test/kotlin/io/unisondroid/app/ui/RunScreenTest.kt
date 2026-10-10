@@ -23,6 +23,7 @@ import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
+import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -253,7 +254,11 @@ private class FakeSyncEngine : SyncEngine(
         private set
     val hostKeyDecisions = mutableListOf<Boolean>()
 
-    override suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome = SyncOutcome.COMPLETED
+    override suspend fun requestSync(
+        profileId: String,
+        mode: SyncMode,
+        variant: SyncVariant,
+    ): SyncOutcome = SyncOutcome.COMPLETED
 
     override suspend fun respondHostKey(approve: Boolean) {
         hostKeyDecisions += approve

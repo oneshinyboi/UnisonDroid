@@ -246,4 +246,20 @@ class PrfGeneratorTest {
 
         assertTrue(out.indexOf("fastcheck = false") < out.indexOf("prefer = newer"), "got:\n$out")
     }
+
+    @Test
+    fun `one way run suppresses the profile conflict policy`() {
+        // A forced mirror must not also emit `prefer`/`copyonconflict`: with `force` in play the
+        // policy is meaningless, and `copyonconflict` would litter the target with copies.
+        val lines = PrfGenerator.generate(
+            profile(policy = ConflictPolicy.KEEP_BOTH),
+            sshCommand(),
+            extraPrefs = listOf("force = /storage/emulated/0/Documents"),
+            includeConflictPolicy = false,
+        ).lines()
+
+        assertTrue(lines.contains("force = /storage/emulated/0/Documents"), "got:\n${lines.joinToString("\n")}")
+        assertFalse(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
+        assertFalse(lines.contains("copyonconflict = true"), "got:\n${lines.joinToString("\n")}")
+    }
 }

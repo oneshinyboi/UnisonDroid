@@ -11,6 +11,7 @@ import io.unisondroid.app.sync.SyncEngine
 import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
+import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,12 +53,21 @@ class StubSyncEngine : SyncEngine(
         private set
 
     @Volatile
+    var requestedVariant: SyncVariant? = null
+        private set
+
+    @Volatile
     var requestCount = 0
         private set
 
-    override suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
+    override suspend fun requestSync(
+        profileId: String,
+        mode: SyncMode,
+        variant: SyncVariant,
+    ): SyncOutcome {
         requestedProfileId = profileId
         requestedMode = mode
+        requestedVariant = variant
         requestCount += 1
         requestLatch.countDown()
         throwOnRequest?.let { throw it }

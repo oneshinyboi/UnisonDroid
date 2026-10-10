@@ -16,6 +16,7 @@ object PrfGenerator {
         ssh: SshCommand,
         extraPrefs: List<String> = emptyList(),
         caseInsensitive: Boolean = false,
+        includeConflictPolicy: Boolean = true,
     ): String {
         val sb = StringBuilder()
         sb.append("root = ").append(profile.localRoot).append('\n')
@@ -52,7 +53,8 @@ object PrfGenerator {
                 sb.append('\n')
             }
         }
-        for (pref in dedupeScalarPreferences(conflictPolicyPreferences(profile) + extraPrefs)) {
+        val policyPrefs = if (includeConflictPolicy) conflictPolicyPreferences(profile) else emptyList()
+        for (pref in dedupeScalarPreferences(policyPrefs + extraPrefs)) {
             sb.append(pref).append('\n')
         }
         return sb.toString()

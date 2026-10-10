@@ -77,11 +77,15 @@ open class SyncEngine(
     @Volatile
     private var activeJob: Job? = null
 
-    open suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
+    open suspend fun requestSync(
+        profileId: String,
+        mode: SyncMode,
+        variant: SyncVariant = SyncVariant.TWO_WAY,
+    ): SyncOutcome {
         if (!syncMutex.tryLock()) return SyncOutcome.BUSY
         try {
             val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
-            return runSync(profileId, binary, sshBinary, mode)
+            return runSync(profileId, binary, sshBinary, mode, variant = variant)
         } finally {
             syncMutex.unlock()
         }
@@ -157,8 +161,12 @@ open class SyncEngine(
         sshBinary: File,
         mode: SyncMode,
         extraPrefs: List<String> = emptyList(),
+        variant: SyncVariant = SyncVariant.TWO_WAY,
     ): SyncOutcome {
         activeJob = currentCoroutineContext()[Job]
+        // Diagnostics connect and exit without syncing, so they must not touch the
+        // profile's recorded last-sync state (a green "OK" would imply a sync ran).
+        val recordResult = !variant.isDiagnostic
         clearStaleLocks()
         var profile: Profile? = null
         var process: RunningProcess? = null
@@ -198,15 +206,21 @@ open class SyncEngine(
                     return SyncOutcome.SKIPPED_UNTRUSTED
                 }
                 is HostKeyOutcome.Declined -> {
-                    failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p))
+                    failSync(profileId, p, SyncState.Reason.AUTH, hostKeyDeclinedDetail(p), recordResult)
                     return SyncOutcome.FAILED
                 }
                 is HostKeyOutcome.TimedOut -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p))
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyTimeoutDetail(p), recordResult)
                     return SyncOutcome.FAILED
                 }
                 is HostKeyOutcome.ScanFailed -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, "Could not verify the host key: ${outcome.detail}")
+                    failSync(
+                        profileId,
+                        p,
+                        SyncState.Reason.TUNNEL,
+                        "Could not verify the host key: ${outcome.detail}",
+                        recordResult,
+                    )
                     return SyncOutcome.FAILED
                 }
             }
@@ -219,11 +233,19 @@ open class SyncEngine(
             val sshCommand = SshCommand(binary = sshBinary, configFile = configFile)
             val caseInsensitive = removableVolume(p.localRoot)
             File(unisonDir, "${p.id}.prf")
-                .writeText(PrfGenerator.generate(p, sshCommand, extraPrefs, caseInsensitive))
+                .writeText(
+                    PrfGenerator.generate(
+                        profile = p,
+                        ssh = sshCommand,
+                        extraPrefs = variant.preferences(p) + extraPrefs,
+                        caseInsensitive = caseInsensitive,
+                        includeConflictPolicy = !variant.isOneWay,
+                    ),
+                )
 
             val proc = runnerFactory(binary).start(
                 env = mapOf("UNISON" to unisonDir.absolutePath),
-                args = listOf(p.id, "-batch"),
+                args = listOf(p.id, "-batch") + variant.args(),
             )
             process = proc
 
@@ -262,23 +284,23 @@ open class SyncEngine(
             val summary = parser.finalize(exit)
             when {
                 versionMismatch != null -> {
-                    failSync(profileId, p, SyncState.Reason.VERSION, versionMismatch!!)
+                    failSync(profileId, p, SyncState.Reason.VERSION, versionMismatch!!, recordResult)
                     return SyncOutcome.FAILED
                 }
                 hostKeyFailure != null -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyFailure!!)
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, hostKeyFailure!!, recordResult)
                     return SyncOutcome.FAILED
                 }
                 authFailure != null -> {
-                    failSync(profileId, p, SyncState.Reason.AUTH, authFailure!!)
+                    failSync(profileId, p, SyncState.Reason.AUTH, authFailure!!, recordResult)
                     return SyncOutcome.FAILED
                 }
                 lostConnection != null -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, lostConnection!!)
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, lostConnection!!, recordResult)
                     return SyncOutcome.FAILED
                 }
                 permissionDenied != null -> {
-                    failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!)
+                    failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!, recordResult)
                     return SyncOutcome.FAILED
                 }
                 // Exit codes (uicommon.ml): 0 = okay, 1 = some items skipped
@@ -286,7 +308,7 @@ open class SyncEngine(
                 // 3 = fatal. Skipping a conflict is normal, so 0-2 are all a
                 // completed run; the summary decides OK/WARNINGS/FAILED.
                 exit >= FATAL_EXIT_CODE -> {
-                    failSync(profileId, p, SyncState.Reason.EXIT, logTail(log))
+                    failSync(profileId, p, SyncState.Reason.EXIT, logTail(log), recordResult)
                     return SyncOutcome.FAILED
                 }
                 else -> {
@@ -302,13 +324,15 @@ open class SyncEngine(
                         summary.failed.isNotEmpty() || exit != 0 -> SyncResult.WARNINGS
                         else -> SyncResult.OK
                     }
-                    profiles.save(
-                        p.copy(
-                            lastSyncedAt = clock.millis(),
-                            lastResult = result,
-                            lastConflicts = summary.conflicts,
-                        ),
-                    )
+                    if (recordResult) {
+                        profiles.save(
+                            p.copy(
+                                lastSyncedAt = clock.millis(),
+                                lastResult = result,
+                                lastConflicts = summary.conflicts,
+                            ),
+                        )
+                    }
                     success = true
                     _state.value = SyncState.Finished(profileId, summary)
                     return SyncOutcome.COMPLETED
@@ -316,13 +340,13 @@ open class SyncEngine(
             }
         } catch (ce: CancellationException) {
             withContext(NonCancellable) {
-                profile?.let { markFailed(it) }
+                profile?.let { markFailed(it, recordResult) }
                 _state.value = SyncState.Failed(profileId, SyncState.Reason.CANCELLED, "Sync cancelled before completion")
             }
             throw ce
         } catch (t: Throwable) {
             withContext(NonCancellable) {
-                failSync(profileId, profile, mapException(t), failureDetail(t))
+                failSync(profileId, profile, mapException(t), failureDetail(t), recordResult)
             }
             return SyncOutcome.FAILED
         } finally {
@@ -360,13 +384,19 @@ open class SyncEngine(
         return keyFile
     }
 
-    private suspend fun failSync(profileId: String, profile: Profile?, reason: SyncState.Reason, detail: String) {
-        profile?.let { markFailed(it) }
+    private suspend fun failSync(
+        profileId: String,
+        profile: Profile?,
+        reason: SyncState.Reason,
+        detail: String,
+        record: Boolean = true,
+    ) {
+        profile?.let { markFailed(it, record) }
         _state.value = SyncState.Failed(profileId, reason, detail)
     }
 
-    private suspend fun markFailed(profile: Profile) {
-        profiles.save(profile.copy(lastResult = SyncResult.FAILED))
+    private suspend fun markFailed(profile: Profile, record: Boolean = true) {
+        if (record) profiles.save(profile.copy(lastResult = SyncResult.FAILED))
     }
 
     private fun logTail(log: List<String>): String = log.takeLast(DETAIL_TAIL_LINES).joinToString(LINE_FEED)

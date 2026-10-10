@@ -806,6 +806,82 @@ class SyncEngineTest {
         assertEquals(1, copies, "copyonconflict must appear exactly once, got:\n$resolvePrf")
     }
 
+    @Test
+    fun `mirror to server forces the local root and drops the conflict policy`() = runTest {
+        var prf: String? = null
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            onStart = { _, _ -> prf = File(unisonDir, "prof1.prf").readText() },
+        )
+        h.repo.save(h.repo.get("prof1")!!.copy(conflictPolicy = ConflictPolicy.KEEP_BOTH))
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_TO_SERVER)
+        }
+
+        val text = prf ?: error("prf was not written")
+        assertTrue(text.contains("force = /storage/emulated/0/Sync\n"), "got:\n$text")
+        assertFalse(text.contains("prefer = newer"), "one-way runs must drop the conflict policy; got:\n$text")
+        assertFalse(text.contains("copyonconflict"), "one-way runs must drop the conflict policy; got:\n$text")
+    }
+
+    @Test
+    fun `copy to server forces local and forbids deletions on the server`() = runTest {
+        var prf: String? = null
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            onStart = { _, _ -> prf = File(unisonDir, "prof1.prf").readText() },
+        )
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.COPY_TO_SERVER)
+        }
+
+        val text = prf ?: error("prf was not written")
+        assertTrue(text.contains("force = /storage/emulated/0/Sync\n"), "got:\n$text")
+        assertTrue(
+            text.contains("nodeletion = ssh://syncuser@$HOST//srv/sync\n"),
+            "got:\n$text",
+        )
+    }
+
+    @Test
+    fun `test connection passes the testserver argument`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.TEST_CONNECTION)
+        }
+
+        val (_, args) = h.runner.starts.single()
+        assertEquals(listOf("prof1", "-batch", "-testserver"), args)
+    }
+
+    @Test
+    fun `a successful diagnostic run records no sync result`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.TEST_CONNECTION)
+        }
+
+        assertTrue(h.engine.state.value is SyncState.Finished)
+        assertNull(h.repo.get("prof1")?.lastSyncedAt, "a connection test must not stamp lastSyncedAt")
+        assertNull(h.repo.get("prof1")?.lastResult, "a connection test must not record a sync result")
+    }
+
+    @Test
+    fun `a failing diagnostic run does not mark the profile failed`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf("Error: boom"), exit = 3)))
+
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.TEST_CONNECTION)
+        }
+
+        assertTrue(h.engine.state.value is SyncState.Failed)
+        assertNull(h.repo.get("prof1")?.lastResult, "a failed connection test must not mark the profile failed")
+    }
+
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =
         withTimeout(10_000) { engine.state.first(predicate) }
 
