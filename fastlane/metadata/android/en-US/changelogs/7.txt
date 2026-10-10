@@ -1,0 +1,11 @@
+Conflict resolution and one-way syncs.
+
+- Resolve conflicts without leaving the app: choose a starting conflict
+  policy per profile, then decide local, remote, or keep-both for each
+  conflicting file.
+- Long-press a profile to run one-way operations: copy to or from the
+  server (never deletes the other side) or mirror to or from it (an
+  exact copy, with a confirmation), plus a test-connection action.
+- Sync results are more accurate: runs that only skipped items are no
+  longer reported as failures, and files kept by a policy are no longer
+  listed as conflicts.
