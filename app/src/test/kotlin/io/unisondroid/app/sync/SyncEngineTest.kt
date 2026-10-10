@@ -1,5 +1,6 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.ConflictPolicy
 import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
@@ -523,6 +524,104 @@ class SyncEngineTest {
             h.repo.get("prof1")?.lastConflicts,
             "a failed run must not clear the earlier conflicts",
         )
+    }
+
+    @Test
+    fun `resolve run appends preferpartial and clears resolved conflicts`() = runTest {
+        val prfsAtStart = mutableListOf<String>()
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
+                ScriptedProcess(lines = listOf(SUMMARY_LINE)),
+            ),
+            onStart = { _, _ -> prfsAtStart += File(unisonDir, "prof1.prf").readText() },
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+        )
+
+        val outcome = withTimeout(10_000) {
+            h.engine.resolveConflicts("prof1", mapOf("notes/plan.txt" to Resolution.KEEP_LOCAL))
+        }
+
+        assertEquals(SyncOutcome.COMPLETED, outcome)
+        val resolvePrf = prfsAtStart[1]
+        assertTrue(
+            resolvePrf.contains("preferpartial = Path notes/plan.txt -> /storage/emulated/0/Sync"),
+            "resolve prf was:\n$resolvePrf",
+        )
+        assertTrue(h.repo.get("prof1")?.lastConflicts.orEmpty().isEmpty(), "resolved conflicts must clear")
+    }
+
+    @Test
+    fun `resolve run keeps unresolved conflicts`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        withTimeout(10_000) {
+            h.engine.resolveConflicts("prof1", mapOf("notes/plan.txt" to Resolution.SKIP))
+        }
+
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+            "a path that still conflicts must remain listed",
+        )
+    }
+
+    @Test
+    fun `resolve while syncing returns BUSY`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
+        )
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        awaitState(h.engine) { it is SyncState.Syncing }
+        val syncing = h.engine.state.value
+
+        val outcome = withTimeout(10_000) {
+            h.engine.resolveConflicts("prof1", mapOf("notes/plan.txt" to Resolution.KEEP_LOCAL))
+        }
+
+        assertEquals(SyncOutcome.BUSY, outcome)
+        assertEquals(syncing, h.engine.state.value, "rejected resolve must not touch state")
+        assertEquals(1, h.runner.starts.size, "rejected resolve must not start another run")
+
+        gate.complete(Unit)
+        withTimeout(10_000) { job.join() }
+        assertTrue(h.engine.state.value is SyncState.Finished)
+    }
+
+    @Test
+    fun `resolve run emits copyonconflict once for keep-both policy and decision`() = runTest {
+        val prfsAtStart = mutableListOf<String>()
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
+                ScriptedProcess(lines = listOf(SUMMARY_LINE)),
+            ),
+            profileIds = listOf("prof1"),
+            onStart = { _, _ -> prfsAtStart += File(unisonDir, "prof1.prf").readText() },
+        )
+        val seeded = h.repo.get("prof1")!!
+        h.repo.save(seeded.copy(conflictPolicy = ConflictPolicy.KEEP_BOTH))
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        withTimeout(10_000) {
+            h.engine.resolveConflicts("prof1", mapOf("notes/plan.txt" to Resolution.KEEP_BOTH))
+        }
+
+        val resolvePrf = prfsAtStart[1]
+        val copies = resolvePrf.lines().count { it == "copyonconflict = true" }
+        assertEquals(1, copies, "copyonconflict must appear exactly once, got:\n$resolvePrf")
     }
 
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =

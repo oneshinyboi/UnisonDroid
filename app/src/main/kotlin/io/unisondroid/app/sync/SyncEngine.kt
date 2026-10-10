@@ -74,6 +74,36 @@ open class SyncEngine(
     private var activeJob: Job? = null
 
     open suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
+        val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
+        if (!syncMutex.tryLock()) return SyncOutcome.BUSY
+        try {
+            return runSync(profileId, binary, sshBinary, mode)
+        } finally {
+            syncMutex.unlock()
+        }
+    }
+
+    /**
+     * Runs a scoped resolve pass: the profile's normal policy prefs plus the
+     * per-path decisions from [ConflictResolver.resolutionPreferences]. The run
+     * reuses the same host-key gate / process / cancel machinery as [requestSync]
+     * and rewrites `lastConflicts` from the fresh output, so resolved paths drop
+     * out and unresolved ones remain.
+     */
+    open suspend fun resolveConflicts(profileId: String, decisions: Map<String, Resolution>): SyncOutcome {
+        val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
+        if (!syncMutex.tryLock()) return SyncOutcome.BUSY
+        try {
+            val profile = profiles.get(profileId)
+            val extraPrefs =
+                if (profile == null) emptyList() else ConflictResolver.resolutionPreferences(profile, decisions)
+            return runSync(profileId, binary, sshBinary, SyncMode.INTERACTIVE, extraPrefs)
+        } finally {
+            syncMutex.unlock()
+        }
+    }
+
+    private fun locateBinaries(profileId: String): Pair<File, File>? {
         val binary = when (val status = binaryLocator.locate()) {
             is BinaryStatus.Missing -> {
                 _state.value = SyncState.Failed(
@@ -81,7 +111,7 @@ open class SyncEngine(
                     reason = SyncState.Reason.BINARY_MISSING,
                     detail = "libunison.so not found in the native library directory",
                 )
-                return SyncOutcome.FAILED
+                return null
             }
             is BinaryStatus.Available -> status.path
         }
@@ -92,16 +122,11 @@ open class SyncEngine(
                     reason = SyncState.Reason.BINARY_MISSING,
                     detail = "libssh.so not found in the native library directory",
                 )
-                return SyncOutcome.FAILED
+                return null
             }
             is BinaryStatus.Available -> status.path
         }
-        if (!syncMutex.tryLock()) return SyncOutcome.BUSY
-        try {
-            return runSync(profileId, binary, sshBinary, mode)
-        } finally {
-            syncMutex.unlock()
-        }
+        return binary to sshBinary
     }
 
     open suspend fun respondHostKey(approve: Boolean) {
@@ -122,7 +147,13 @@ open class SyncEngine(
         unisonDir.listFiles { f -> f.isFile && STALE_LOCK.matches(f.name) }?.forEach { it.delete() }
     }
 
-    private suspend fun runSync(profileId: String, binary: File, sshBinary: File, mode: SyncMode): SyncOutcome {
+    private suspend fun runSync(
+        profileId: String,
+        binary: File,
+        sshBinary: File,
+        mode: SyncMode,
+        extraPrefs: List<String> = emptyList(),
+    ): SyncOutcome {
         activeJob = currentCoroutineContext()[Job]
         clearStaleLocks()
         var profile: Profile? = null
@@ -182,7 +213,7 @@ open class SyncEngine(
             val configFile = File(sshHome, "ssh_config")
             writeAtomically(configFile, SshConfig.render(key, knownHosts, p.sshPort))
             val sshCommand = SshCommand(binary = sshBinary, configFile = configFile)
-            File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand))
+            File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand, extraPrefs))
 
             val proc = runnerFactory(binary).start(
                 env = mapOf("UNISON" to unisonDir.absolutePath),

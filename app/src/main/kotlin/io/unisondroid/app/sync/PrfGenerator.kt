@@ -11,7 +11,7 @@ data class SshCommand(
 
 object PrfGenerator {
 
-    fun generate(profile: Profile, ssh: SshCommand): String {
+    fun generate(profile: Profile, ssh: SshCommand, extraPrefs: List<String> = emptyList()): String {
         val sb = StringBuilder()
         sb.append("root = ").append(profile.localRoot).append('\n')
         sb.append("root = ").append(sshRoot(profile)).append('\n')
@@ -39,7 +39,7 @@ object PrfGenerator {
                 sb.append('\n')
             }
         }
-        for (pref in conflictPolicyPreferences(profile)) {
+        for (pref in dedupeScalarPreferences(conflictPolicyPreferences(profile) + extraPrefs)) {
             sb.append(pref).append('\n')
         }
         return sb.toString()
@@ -53,6 +53,16 @@ object PrfGenerator {
         ConflictPolicy.PREFER_REMOTE -> listOf("prefer = ${sshRoot(profile)}")
         ConflictPolicy.KEEP_BOTH -> listOf("prefer = newer", "copyonconflict = true")
     }
+
+    // A scalar pref such as `copyonconflict = true` must be emitted at most once,
+    // even when both the profile's policy and a per-file decision request it.
+    // `preferpartial` lines are repeatable (one per resolved path): keep them all.
+    private fun dedupeScalarPreferences(prefs: List<String>): List<String> {
+        val seen = mutableSetOf<String>()
+        return prefs.filter { it.startsWith(PREFER_PARTIAL_PREFIX) || seen.add(it) }
+    }
+
+    private const val PREFER_PARTIAL_PREFIX = "preferpartial"
 
     internal fun sshRoot(profile: Profile): String =
         "ssh://${profile.user}@${profile.host}/${profile.remoteRoot}"
