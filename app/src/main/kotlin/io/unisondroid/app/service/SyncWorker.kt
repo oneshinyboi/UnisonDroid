@@ -37,7 +37,8 @@ class SyncWorker(
 
         // Starting a foreground service can be refused (FGS restrictions, missing notification
         // permission). The sync itself must still run, so a failure here is not fatal.
-        runCatching { setForeground(notifications.foregroundInfo(TEXT_RUNNING)) }
+        val runningText = if (variant.isDiagnostic) TEXT_TESTING else TEXT_RUNNING
+        runCatching { setForeground(notifications.foregroundInfo(runningText)) }
 
         val outcome = try {
             ServiceLocator.engine(applicationContext).requestSync(profileId, mode, variant, confirmed)
@@ -72,5 +73,6 @@ class SyncWorker(
         const val KEY_VARIANT = "variant"
         const val KEY_CONFIRMED = "confirmed"
         private const val TEXT_RUNNING = "Syncing…"
+        private const val TEXT_TESTING = "Testing connection…"
     }
 }

@@ -22,10 +22,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
+import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.ui.components.StatusChip
 import kotlinx.coroutines.launch
@@ -61,6 +65,7 @@ const val CONFLICTS_COUNT_PREFIX = "profileConflicts-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
 const val PROFILE_ACTION_PREFIX = "profileAction-"
 const val MIRROR_CONFIRM_TAG = "confirmMirrorRun"
+const val SYNC_BUSY_MESSAGE = "A sync is already running. Try again when it finishes."
 
 private val LAST_SYNC_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
@@ -88,12 +93,15 @@ fun ProfilesScreen(
     }
     var hasAccess by remember { mutableStateOf(hasAllFilesAccess(context)) }
     val requestAccess = rememberAllFilesAccessRequest { hasAccess = it }
+    val engine = remember(context) { ServiceLocator.engine(context) }
+    val syncState by engine.state.collectAsState()
     ProfilesContent(
         profiles = profiles,
         onOpenProfile = onOpenProfile,
         onStartSync = onStartSync,
         hasLocalAccess = hasAccess,
         onRequestAccess = requestAccess,
+        syncActive = syncState.isActiveRun(),
         onDeleteProfile = { id ->
             scope.launch {
                 repository.delete(id)
@@ -128,12 +136,18 @@ internal fun ProfilesContent(
     onOpenSettings: () -> Unit = {},
     onResolveConflicts: (String) -> Unit = {},
     onRunVariant: (String, SyncVariant, Boolean) -> Unit = { _, _, _ -> },
+    syncActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<Profile?>(null) }
     var pendingMirror by remember { mutableStateOf<Pair<Profile, SyncVariant>?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    // A second run enqueued while one is active is silently dropped, so tell the user instead.
+    val warnBusy: () -> Unit = { scope.launch { snackbarHostState.showSnackbar(SYNC_BUSY_MESSAGE) } }
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(text = "UnisonDroid") },
@@ -180,12 +194,12 @@ internal fun ProfilesContent(
                 items(profiles, key = { it.id }) { profile ->
                     ProfileRow(
                         profile = profile,
-                        onClick = { onStartSync(profile.id) },
+                        onClick = { if (syncActive) warnBusy() else onStartSync(profile.id) },
                         onRunVariant = { variant ->
-                            if (variant.destroysTarget) {
-                                pendingMirror = profile to variant
-                            } else {
-                                onRunVariant(profile.id, variant, false)
+                            when {
+                                syncActive -> warnBusy()
+                                variant.destroysTarget -> pendingMirror = profile to variant
+                                else -> onRunVariant(profile.id, variant, false)
                             }
                         },
                         onEdit = { onOpenProfile(profile.id) },
@@ -226,7 +240,11 @@ internal fun ProfilesContent(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onRunVariant(profile.id, variant, true)
+                        if (syncActive) {
+                            warnBusy()
+                        } else {
+                            onRunVariant(profile.id, variant, true)
+                        }
                         pendingMirror = null
                     },
                     modifier = Modifier.testTag(MIRROR_CONFIRM_TAG),
@@ -238,6 +256,10 @@ internal fun ProfilesContent(
         )
     }
 }
+
+/** A run is active (and a second run would be dropped) while the engine is in one of these states. */
+private fun SyncState.isActiveRun(): Boolean =
+    this is SyncState.Connecting || this is SyncState.Syncing || this is SyncState.AwaitingHostKey
 
 private fun mirrorTitle(variant: SyncVariant): String =
     if (variant == SyncVariant.MIRROR_TO_SERVER) "Mirror to server?" else "Mirror from server?"
@@ -309,33 +331,33 @@ private fun ProfileRow(
             },
         )
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            RunMenuItem(profile, SyncVariant.TWO_WAY, "Sync now") {
+            RunMenuItem(profile, SyncVariant.TWO_WAY, SyncVariant.TWO_WAY.menuLabel()) {
                 menuExpanded = false
                 onRunVariant(it)
             }
             HorizontalDivider()
             RunMenuHeader("Upload to server")
-            RunMenuItem(profile, SyncVariant.COPY_TO_SERVER, "Copy to server (keep extras)") {
+            RunMenuItem(profile, SyncVariant.COPY_TO_SERVER, SyncVariant.COPY_TO_SERVER.menuLabel()) {
                 menuExpanded = false
                 onRunVariant(it)
             }
-            RunMenuItem(profile, SyncVariant.MIRROR_TO_SERVER, "Mirror to server (exact copy)", destructive = true) {
+            RunMenuItem(profile, SyncVariant.MIRROR_TO_SERVER, SyncVariant.MIRROR_TO_SERVER.menuLabel(), destructive = true) {
                 menuExpanded = false
                 onRunVariant(it)
             }
             HorizontalDivider()
             RunMenuHeader("Download from server")
-            RunMenuItem(profile, SyncVariant.COPY_FROM_SERVER, "Copy from server (keep extras)") {
+            RunMenuItem(profile, SyncVariant.COPY_FROM_SERVER, SyncVariant.COPY_FROM_SERVER.menuLabel()) {
                 menuExpanded = false
                 onRunVariant(it)
             }
-            RunMenuItem(profile, SyncVariant.MIRROR_FROM_SERVER, "Mirror from server (exact copy)", destructive = true) {
+            RunMenuItem(profile, SyncVariant.MIRROR_FROM_SERVER, SyncVariant.MIRROR_FROM_SERVER.menuLabel(), destructive = true) {
                 menuExpanded = false
                 onRunVariant(it)
             }
             HorizontalDivider()
             RunMenuHeader("Diagnostics")
-            RunMenuItem(profile, SyncVariant.TEST_CONNECTION, "Test connection") {
+            RunMenuItem(profile, SyncVariant.TEST_CONNECTION, SyncVariant.TEST_CONNECTION.menuLabel()) {
                 menuExpanded = false
                 onRunVariant(it)
             }

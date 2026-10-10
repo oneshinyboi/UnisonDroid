@@ -188,6 +188,15 @@ class RunScreenTest {
     }
 
     @Test
+    fun `a diagnostic run says testing connection instead of syncing`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.TEST_CONNECTION) }
+        }
+
+        compose.onNodeWithText("Testing connection", substring = true).assertExists()
+    }
+
+    @Test
     fun `passes destructive confirmation to the sync run`() {
         compose.setContent {
             UnisonDroidTheme {

@@ -119,9 +119,15 @@ internal fun RunContent(
                 .padding(16.dp),
         ) {
             when (state) {
-                SyncState.Idle -> StatusLine("Starting sync…")
+                SyncState.Idle ->
+                    StatusLine(if (variant.isDiagnostic) "Testing connection…" else "Starting sync…")
+
                 is SyncState.Connecting -> StatusLine("Connecting to the server…")
-                is SyncState.Syncing -> SyncingBody(state = state, onCancel = onCancel)
+                is SyncState.Syncing -> SyncingBody(
+                    state = state,
+                    onCancel = onCancel,
+                    label = if (variant.isDiagnostic) "Testing connection…" else "Syncing…",
+                )
                 is SyncState.Finished ->
                     if (variant.isDiagnostic) {
                         ConnectionOkCard()
@@ -156,9 +162,13 @@ private fun StatusLine(text: String) {
 }
 
 @Composable
-private fun ColumnScope.SyncingBody(state: SyncState.Syncing, onCancel: () -> Unit) {
+private fun ColumnScope.SyncingBody(
+    state: SyncState.Syncing,
+    onCancel: () -> Unit,
+    label: String = "Syncing…",
+) {
     Text(
-        text = "Syncing… ${(state.progress * 100).roundToInt()}%",
+        text = "$label ${(state.progress * 100).roundToInt()}%",
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.testTag(RUN_PROGRESS_TAG),
     )

@@ -10,7 +10,9 @@ import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.SyncResult
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.service.StubSyncEngine
 import io.unisondroid.app.service.SyncScheduler
+import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import org.junit.After
@@ -49,6 +51,7 @@ class ProfilesScreenTest {
     val compose = createComposeRule()
 
     private lateinit var repository: ProfileRepository
+    private lateinit var engine: StubSyncEngine
 
     @Before
     fun setUp() {
@@ -57,11 +60,14 @@ class ProfilesScreenTest {
         repository = ProfileRepository(JsonStore(dir))
         ServiceLocator.reset()
         ServiceLocator.profilesProvider = { repository }
+        engine = StubSyncEngine()
+        ServiceLocator.engineProvider = { engine }
     }
 
     @After
     fun tearDown() {
         ServiceLocator.profilesProvider = ServiceLocator.defaultProfilesProvider
+        ServiceLocator.engineProvider = ServiceLocator.defaultEngineProvider
         ServiceLocator.reset()
     }
 
@@ -407,6 +413,53 @@ class ProfilesScreenTest {
         compose.onNodeWithText("Cancel").performClick()
 
         assertEquals("cancelling must not run anything", null, ran)
+    }
+
+    @Test
+    fun `tapping a profile is blocked with a message while a sync is active`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        engine.states.value = SyncState.Syncing("p1", listOf("working"), 0.1f)
+        var started: String? = null
+
+        compose.setContent {
+            UnisonDroidTheme { ProfilesScreen(onOpenProfile = {}, onStartSync = { started = it }) }
+        }
+
+        compose.onNodeWithText("My Server").performClick()
+
+        awaitText(SYNC_BUSY_MESSAGE)
+        assertEquals(null, started)
+    }
+
+    @Test
+    fun `a run variant is blocked with a message while a sync is active`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        engine.states.value = SyncState.Syncing("p1", listOf("working"), 0.1f)
+        var ran: Triple<String, SyncVariant, Boolean>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.COPY_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.COPY_TO_SERVER)).performClick()
+
+        awaitText(SYNC_BUSY_MESSAGE)
+        assertEquals(null, ran)
+    }
+
+    private fun awaitText(text: String) {
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     private fun actionTag(profileId: String, variant: SyncVariant): String =

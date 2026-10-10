@@ -9,6 +9,7 @@ import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncOutcome
@@ -208,6 +209,33 @@ class SyncWorkerTest {
         runBlocking { built.doWork() }
 
         assertEquals(SyncVariant.TWO_WAY, engine.requestedVariant)
+    }
+
+    @Test
+    fun `diagnostic run uses the testing-connection foreground text`() {
+        engine.outcome = SyncOutcome.COMPLETED
+        val captured = mutableListOf<ForegroundInfo>()
+        val built = TestListenableWorkerBuilder<SyncWorker>(context)
+            .setInputData(input("p1", SyncMode.INTERACTIVE, SyncVariant.TEST_CONNECTION))
+            .setForegroundUpdater(object : ForegroundUpdater {
+                override fun setForegroundAsync(
+                    context: Context,
+                    id: UUID,
+                    foregroundInfo: ForegroundInfo,
+                ): ListenableFuture<Void> {
+                    captured += foregroundInfo
+                    @Suppress("UNCHECKED_CAST")
+                    return Futures.immediateVoidFuture() as ListenableFuture<Void>
+                }
+            })
+            .build()
+
+        runBlocking { built.doWork() }
+
+        val text = captured.single().notification.extras
+            .getCharSequence(Notification.EXTRA_TEXT)
+            ?.toString()
+        assertEquals("Testing connection…", text)
     }
 
     private fun worker(

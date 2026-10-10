@@ -11,3 +11,13 @@ internal fun SyncVariant.title(): String = when (this) {
     SyncVariant.MIRROR_FROM_SERVER -> "Mirror from server"
     SyncVariant.TEST_CONNECTION -> "Test connection"
 }
+
+/** Menu label for a run variant: clearer about the keep-vs-delete consequence than [title]. */
+internal fun SyncVariant.menuLabel(): String = when (this) {
+    SyncVariant.TWO_WAY -> "Sync now"
+    SyncVariant.COPY_TO_SERVER -> "Copy to server (keep extras)"
+    SyncVariant.MIRROR_TO_SERVER -> "Mirror to server (exact copy)"
+    SyncVariant.COPY_FROM_SERVER -> "Copy from server (keep extras)"
+    SyncVariant.MIRROR_FROM_SERVER -> "Mirror from server (exact copy)"
+    SyncVariant.TEST_CONNECTION -> "Test connection"
+}
