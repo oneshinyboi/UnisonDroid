@@ -1,6 +1,6 @@
 package io.unisondroid.app.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
+import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.ui.components.StatusChip
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -56,6 +59,8 @@ const val PROFILE_DELETE_PREFIX = "profileDelete-"
 const val PROFILE_RESOLVE_PREFIX = "profileResolve-"
 const val CONFLICTS_COUNT_PREFIX = "profileConflicts-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
+const val PROFILE_ACTION_PREFIX = "profileAction-"
+const val MIRROR_CONFIRM_TAG = "confirmMirrorRun"
 
 private val LAST_SYNC_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
@@ -71,6 +76,7 @@ fun ProfilesScreen(
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onResolveConflicts: (String) -> Unit = {},
+    onRunVariant: (String, SyncVariant) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -103,6 +109,7 @@ fun ProfilesScreen(
         onOpenAbout = onOpenAbout,
         onOpenSettings = onOpenSettings,
         onResolveConflicts = onResolveConflicts,
+        onRunVariant = onRunVariant,
         modifier = modifier,
     )
 }
@@ -120,9 +127,11 @@ internal fun ProfilesContent(
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onResolveConflicts: (String) -> Unit = {},
+    onRunVariant: (String, SyncVariant) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<Profile?>(null) }
+    var pendingMirror by remember { mutableStateOf<Pair<Profile, SyncVariant>?>(null) }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -172,6 +181,13 @@ internal fun ProfilesContent(
                     ProfileRow(
                         profile = profile,
                         onClick = { onStartSync(profile.id) },
+                        onRunVariant = { variant ->
+                            if (variant.destroysTarget) {
+                                pendingMirror = profile to variant
+                            } else {
+                                onRunVariant(profile.id, variant)
+                            }
+                        },
                         onEdit = { onOpenProfile(profile.id) },
                         onDelete = { pendingDelete = profile },
                         onResolve = { onResolveConflicts(profile.id) },
@@ -201,58 +217,160 @@ internal fun ProfilesContent(
             },
         )
     }
+
+    pendingMirror?.let { (profile, variant) ->
+        AlertDialog(
+            onDismissRequest = { pendingMirror = null },
+            title = { Text(mirrorTitle(variant)) },
+            text = { Text(mirrorWarning(profile, variant)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRunVariant(profile.id, variant)
+                        pendingMirror = null
+                    },
+                    modifier = Modifier.testTag(MIRROR_CONFIRM_TAG),
+                ) { Text(mirrorTitle(variant).removeSuffix("?")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMirror = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
+
+private fun mirrorTitle(variant: SyncVariant): String =
+    if (variant == SyncVariant.MIRROR_TO_SERVER) "Mirror to server?" else "Mirror from server?"
+
+private fun mirrorWarning(profile: Profile, variant: SyncVariant): String =
+    if (variant == SyncVariant.MIRROR_TO_SERVER) {
+        "This makes the server an exact copy of \"${profile.name}\" and deletes files on the " +
+            "server that are not on this phone. This cannot be undone."
+    } else {
+        "This makes this phone an exact copy of \"${profile.name}\" and deletes local files " +
+            "that are not on the server. This cannot be undone."
+    }
 
 @Composable
 private fun ProfileRow(
     profile: Profile,
     onClick: () -> Unit,
+    onRunVariant: (SyncVariant) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onResolve: () -> Unit,
 ) {
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .testTag("$PROFILE_ROW_TAG-${profile.id}"),
-        headlineContent = { Text(text = profile.name) },
-        supportingContent = {
-            Column {
-                Text(text = profile.host, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    text = lastSyncLabel(profile.lastSyncedAt),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag(LAST_SYNC_TAG),
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { menuExpanded = true },
                 )
-                if (profile.lastConflicts.any { it.resolvable }) {
+                .testTag("$PROFILE_ROW_TAG-${profile.id}"),
+            headlineContent = { Text(text = profile.name) },
+            supportingContent = {
+                Column {
+                    Text(text = profile.host, style = MaterialTheme.typography.bodySmall)
                     Text(
-                        text = "${profile.lastConflicts.count { it.resolvable }} conflicts",
+                        text = lastSyncLabel(profile.lastSyncedAt),
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag("$CONFLICTS_COUNT_PREFIX${profile.id}"),
+                        modifier = Modifier.testTag(LAST_SYNC_TAG),
                     )
+                    if (profile.lastConflicts.any { it.resolvable }) {
+                        Text(
+                            text = "${profile.lastConflicts.count { it.resolvable }} conflicts",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("$CONFLICTS_COUNT_PREFIX${profile.id}"),
+                        )
+                    }
                 }
-            }
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusChip(result = profile.lastResult)
-                if (profile.lastConflicts.any { it.resolvable }) {
+            },
+            trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusChip(result = profile.lastResult)
+                    if (profile.lastConflicts.any { it.resolvable }) {
+                        TextButton(
+                            onClick = onResolve,
+                            modifier = Modifier.testTag("$PROFILE_RESOLVE_PREFIX${profile.id}"),
+                        ) { Text("Resolve") }
+                    }
                     TextButton(
-                        onClick = onResolve,
-                        modifier = Modifier.testTag("$PROFILE_RESOLVE_PREFIX${profile.id}"),
-                    ) { Text("Resolve") }
+                        onClick = onEdit,
+                        modifier = Modifier.testTag("$PROFILE_EDIT_PREFIX${profile.id}"),
+                    ) { Text("Edit") }
+                    TextButton(
+                        onClick = onDelete,
+                        modifier = Modifier.testTag("$PROFILE_DELETE_PREFIX${profile.id}"),
+                    ) { Text("Delete") }
                 }
-                TextButton(
-                    onClick = onEdit,
-                    modifier = Modifier.testTag("$PROFILE_EDIT_PREFIX${profile.id}"),
-                ) { Text("Edit") }
-                TextButton(
-                    onClick = onDelete,
-                    modifier = Modifier.testTag("$PROFILE_DELETE_PREFIX${profile.id}"),
-                ) { Text("Delete") }
+            },
+        )
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            RunMenuItem(profile, SyncVariant.TWO_WAY, "Sync now") {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+            HorizontalDivider()
+            RunMenuHeader("Upload to server")
+            RunMenuItem(profile, SyncVariant.COPY_TO_SERVER, "Copy to server (keep extras)") {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+            RunMenuItem(profile, SyncVariant.MIRROR_TO_SERVER, "Mirror to server (exact copy)", destructive = true) {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+            HorizontalDivider()
+            RunMenuHeader("Download from server")
+            RunMenuItem(profile, SyncVariant.COPY_FROM_SERVER, "Copy from server (keep extras)") {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+            RunMenuItem(profile, SyncVariant.MIRROR_FROM_SERVER, "Mirror from server (exact copy)", destructive = true) {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+            HorizontalDivider()
+            RunMenuHeader("Diagnostics")
+            RunMenuItem(profile, SyncVariant.TEST_CONNECTION, "Test connection") {
+                menuExpanded = false
+                onRunVariant(it)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunMenuItem(
+    profile: Profile,
+    variant: SyncVariant,
+    label: String,
+    destructive: Boolean = false,
+    onClick: (SyncVariant) -> Unit,
+) {
+    DropdownMenuItem(
+        text = {
+            if (destructive) {
+                Text(text = label, color = MaterialTheme.colorScheme.error)
+            } else {
+                Text(text = label)
             }
         },
+        onClick = { onClick(variant) },
+        modifier = Modifier.testTag("$PROFILE_ACTION_PREFIX${profile.id}-${variant.name}"),
+    )
+}
+
+@Composable
+private fun RunMenuHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
     )
 }
 

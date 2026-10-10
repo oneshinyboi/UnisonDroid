@@ -11,6 +11,7 @@ import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.SyncResult
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
+import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,6 +30,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
@@ -285,6 +288,101 @@ class ProfilesScreenTest {
 
         assertTrue(granted)
     }
+
+    @Test
+    fun `long pressing a profile opens the run menu`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+
+        compose.setContent {
+            UnisonDroidTheme { ProfilesScreen(onOpenProfile = {}, onStartSync = {}) }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+
+        awaitTag(actionTag("p1", SyncVariant.TEST_CONNECTION))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.TEST_CONNECTION)).assertExists()
+    }
+
+    @Test
+    fun `copy to server runs the chosen variant`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        var ran: Pair<String, SyncVariant>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant -> ran = id to variant },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.COPY_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.COPY_TO_SERVER)).performClick()
+
+        assertEquals("p1" to SyncVariant.COPY_TO_SERVER, ran)
+    }
+
+    @Test
+    fun `mirror to server confirms before running`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        var ran: Pair<String, SyncVariant>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant -> ran = id to variant },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER)).performClick()
+
+        awaitTag(MIRROR_CONFIRM_TAG)
+        assertEquals("mirroring must not run before confirmation", null, ran)
+
+        compose.onNodeWithTag(MIRROR_CONFIRM_TAG).performClick()
+
+        assertEquals("p1" to SyncVariant.MIRROR_TO_SERVER, ran)
+    }
+
+    @Test
+    fun `canceling a mirror confirmation runs nothing`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        var ran: Pair<String, SyncVariant>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant -> ran = id to variant },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER)).performClick()
+        awaitTag(MIRROR_CONFIRM_TAG)
+
+        compose.onNodeWithText("Cancel").performClick()
+
+        assertEquals("cancelling must not run anything", null, ran)
+    }
+
+    private fun actionTag(profileId: String, variant: SyncVariant): String =
+        "$PROFILE_ACTION_PREFIX$profileId-${variant.name}"
 
     private fun awaitTag(tag: String) {
         compose.waitUntil(5_000) {
