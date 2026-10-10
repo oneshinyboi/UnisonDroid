@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.work.testing.WorkManagerTestInitHelper
+import io.unisondroid.app.data.ConflictPolicy
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -267,6 +268,84 @@ class ProfileEditorScreenTest {
         assertEquals("turning auto-sync off must not trigger the permission flow", 1, enabledCount)
     }
 
+    @Test
+    fun `new profiles default the conflict policy to skip`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = null, onSaved = {})
+            }
+        }
+        awaitEditor()
+        fillRequired()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        val profile = awaitSavedProfile()
+        assertEquals(ConflictPolicy.SKIP, profile.conflictPolicy)
+    }
+
+    @Test
+    fun `existing conflict policy is shown and preserved on save`() {
+        runBlocking { repository.save(seedProfile(conflictPolicy = ConflictPolicy.PREFER_NEWER)) }
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = "p1", onSaved = {})
+            }
+        }
+        awaitEditor()
+
+        compose.onNodeWithTag(FIELD_CONFLICT_POLICY).performScrollTo()
+        compose.onNodeWithText("Prefer newer").assertExists()
+
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        compose.waitUntil(5_000) {
+            runBlocking { repository.get("p1")?.conflictPolicy == ConflictPolicy.PREFER_NEWER }
+        }
+        assertEquals(
+            "the seeded policy must be carried into the saved profile",
+            ConflictPolicy.PREFER_NEWER,
+            runBlocking { repository.get("p1")!!.conflictPolicy },
+        )
+    }
+
+    @Test
+    fun `conflict policy selection round-trips into the saved profile`() {
+        runBlocking { repository.save(seedProfile(conflictPolicy = ConflictPolicy.PREFER_NEWER)) }
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = "p1", onSaved = {})
+            }
+        }
+        awaitEditor()
+
+        compose.onNodeWithTag(FIELD_CONFLICT_POLICY).performScrollTo().performClick()
+        compose.onNodeWithText("Keep both copies").performClick()
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        compose.waitUntil(5_000) {
+            runBlocking { repository.get("p1")?.conflictPolicy == ConflictPolicy.KEEP_BOTH }
+        }
+        assertEquals(ConflictPolicy.KEEP_BOTH, runBlocking { repository.get("p1")!!.conflictPolicy })
+    }
+
+    @Test
+    fun `prefer older shows the file-times hint`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = null, onSaved = {})
+            }
+        }
+        awaitEditor()
+
+        compose.onNodeWithTag(FIELD_CONFLICT_POLICY).performScrollTo().performClick()
+        compose.onNodeWithText("Prefer older").performClick()
+
+        compose.onNodeWithText("Prefer older requires syncing file times.").assertExists()
+    }
+
     private fun fillRequired() {
         compose.onNodeWithTag(FIELD_NAME).performScrollTo().performTextInput("Phone")
         compose.onNodeWithTag(FIELD_LOCAL_ROOT).performScrollTo().performTextInput("/storage/emulated/0/Unison")
@@ -291,6 +370,7 @@ class ProfileEditorScreenTest {
     private fun seedProfile(
         autoSyncEnabled: Boolean = false,
         autoSyncIntervalMinutes: Int = 60,
+        conflictPolicy: ConflictPolicy = ConflictPolicy.SKIP,
     ): Profile = Profile(
         id = "p1",
         name = "Phone",
@@ -301,6 +381,7 @@ class ProfileEditorScreenTest {
         sshKeyId = "key1",
         autoSyncEnabled = autoSyncEnabled,
         autoSyncIntervalMinutes = autoSyncIntervalMinutes,
+        conflictPolicy = conflictPolicy,
     )
 
     private object XorCipher : KeyCipher {

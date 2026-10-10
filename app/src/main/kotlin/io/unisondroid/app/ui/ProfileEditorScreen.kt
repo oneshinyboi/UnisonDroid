@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import io.unisondroid.app.data.ConflictPolicy
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.SshKey
 import io.unisondroid.app.data.Transport
@@ -61,6 +62,7 @@ const val FIELD_ADVANCED = "editor-advancedPrefs"
 const val FIELD_SERVER_CMD = "editor-serverCommand"
 const val FIELD_AUTO_SYNC = "editor-autoSync"
 const val FIELD_INTERVAL = "editor-autoSyncInterval"
+const val FIELD_CONFLICT_POLICY = "editor-conflictPolicy"
 const val BROWSE_LOCAL = "editor-browseLocal"
 const val SAVE_BUTTON = "editor-save"
 const val VALIDATION_ERROR = "editor-validationError"
@@ -71,6 +73,24 @@ val AUTO_SYNC_INTERVALS_MINUTES = listOf(15, 30, 60, 180, 360, 720, 1440)
 
 internal fun intervalLabel(minutes: Int): String =
     if (minutes < 60) "$minutes min" else "${minutes / 60} h"
+
+val CONFLICT_POLICIES = listOf(
+    ConflictPolicy.SKIP,
+    ConflictPolicy.PREFER_NEWER,
+    ConflictPolicy.PREFER_OLDER,
+    ConflictPolicy.PREFER_LOCAL,
+    ConflictPolicy.PREFER_REMOTE,
+    ConflictPolicy.KEEP_BOTH,
+)
+
+internal fun conflictPolicyLabel(policy: ConflictPolicy): String = when (policy) {
+    ConflictPolicy.SKIP -> "Skip (leave for review)"
+    ConflictPolicy.PREFER_NEWER -> "Prefer newer"
+    ConflictPolicy.PREFER_OLDER -> "Prefer older"
+    ConflictPolicy.PREFER_LOCAL -> "Prefer this device"
+    ConflictPolicy.PREFER_REMOTE -> "Prefer the server"
+    ConflictPolicy.KEEP_BOTH -> "Keep both copies"
+}
 
 @Composable
 fun ProfileEditorScreen(
@@ -186,6 +206,10 @@ internal fun ProfileEditorContent(
     var autoSyncEnabled by remember(initial) { mutableStateOf(initial?.autoSyncEnabled ?: false) }
     var intervalMinutes by remember(initial) { mutableStateOf(initial?.autoSyncIntervalMinutes ?: 60) }
     var intervalMenu by remember { mutableStateOf(false) }
+    var conflictPolicy by remember(initial) {
+        mutableStateOf(initial?.conflictPolicy ?: ConflictPolicy.SKIP)
+    }
+    var conflictMenu by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var browsing by remember { mutableStateOf(false) }
     var keyMenu by remember { mutableStateOf(false) }
@@ -219,6 +243,7 @@ internal fun ProfileEditorContent(
                 serverCommand = serverCommand.trim().ifEmpty { "unison" },
                 ignorePatterns = ignoreText.split('\n').map { it.trim() }.filter { it.isNotEmpty() },
                 advancedPrefs = advanced,
+                conflictPolicy = conflictPolicy,
                 autoSyncEnabled = autoSyncEnabled,
                 autoSyncIntervalMinutes = intervalMinutes,
                 lastSyncedAt = initial?.lastSyncedAt,
@@ -359,6 +384,38 @@ internal fun ProfileEditorContent(
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth().testTag(FIELD_ADVANCED),
             )
+
+            Text(
+                text = "Conflicts",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "When both sides change the same file",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Box {
+                OutlinedButton(
+                    onClick = { conflictMenu = true },
+                    modifier = Modifier.fillMaxWidth().testTag(FIELD_CONFLICT_POLICY),
+                ) { Text(text = conflictPolicyLabel(conflictPolicy)) }
+                DropdownMenu(expanded = conflictMenu, onDismissRequest = { conflictMenu = false }) {
+                    CONFLICT_POLICIES.forEach { policy ->
+                        DropdownMenuItem(
+                            text = { Text(conflictPolicyLabel(policy)) },
+                            onClick = {
+                                conflictPolicy = policy
+                                conflictMenu = false
+                            },
+                        )
+                    }
+                }
+            }
+            if (conflictPolicy == ConflictPolicy.PREFER_OLDER) {
+                Text(
+                    text = "Prefer older requires syncing file times.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
 
             Text(
                 text = "Scheduled sync",
