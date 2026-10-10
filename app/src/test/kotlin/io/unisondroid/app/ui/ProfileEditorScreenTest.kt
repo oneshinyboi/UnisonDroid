@@ -103,6 +103,7 @@ class ProfileEditorScreenTest {
         val profile = awaitSavedProfile()
         assertEquals("-batch", profile.advancedPrefs)
         assertEquals(listOf("*.tmp", "build/"), profile.ignorePatterns)
+        compose.waitUntil(5_000) { saved }
         assertTrue(saved)
     }
 
@@ -234,6 +235,11 @@ class ProfileEditorScreenTest {
             runBlocking { repository.get("p1")?.autoSyncEnabled == false }
         }
         assertFalse(runBlocking { repository.get("p1")!!.autoSyncEnabled })
+        assertEquals(
+            "the interval must round-trip even after the switch is turned off",
+            180,
+            runBlocking { repository.get("p1")!!.autoSyncIntervalMinutes },
+        )
     }
 
     @Test

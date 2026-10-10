@@ -13,7 +13,8 @@ import com.google.crypto.tink.integration.android.AndroidKeysetManager
  *
  * The keyset is resolved lazily: constructing a [KeyVault] must not touch the
  * Android Keystore, and the master key is only needed once a key is actually
- * encrypted or decrypted.
+ * encrypted or decrypted. If initialization throws, the next call retries it —
+ * which is acceptable because a Keystore failure is not memoized as success.
  */
 class TinkKeyCipher(private val context: Context) : KeyCipher {
 

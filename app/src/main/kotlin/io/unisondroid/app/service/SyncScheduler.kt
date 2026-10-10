@@ -12,6 +12,8 @@ import androidx.work.workDataOf
 import io.unisondroid.app.data.AppSettings
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.SyncMode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,13 +39,25 @@ class SyncScheduler(private val context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(periodicWorkName(profileId))
     }
 
-    fun reconcile(profiles: List<Profile>, settings: AppSettings) {
-        profiles.forEach { profile ->
-            val name = periodicWorkName(profile.id)
-            if (!profile.autoSyncEnabled) {
-                WorkManager.getInstance(context).cancelUniqueWork(name)
-                return@forEach
+    suspend fun reconcile(profiles: List<Profile>, settings: AppSettings) {
+        val workManager = WorkManager.getInstance(context)
+        val desiredIds = profiles.filter { it.autoSyncEnabled }.map { it.id }.toSet()
+
+        // Make reconcile authoritative: cancel any auto-sync work whose profile is no
+        // longer enabled or no longer exists. This does not rely on every removal path
+        // remembering to call cancel().
+        withContext(Dispatchers.IO) {
+            val existing = runCatching { workManager.getWorkInfosByTag(AUTO_SYNC_TAG).get() }
+                .getOrDefault(emptyList())
+            existing.forEach { info ->
+                val id = info.tags.firstNotNullOfOrNull { tag ->
+                    tag.takeIf { it.startsWith(PROFILE_TAG_PREFIX) }?.removePrefix(PROFILE_TAG_PREFIX)
+                }
+                if (id == null || id !in desiredIds) workManager.cancelWorkById(info.id)
             }
+        }
+
+        profiles.filter { it.autoSyncEnabled }.forEach { profile ->
             val minutes = maxOf(profile.autoSyncIntervalMinutes, MIN_INTERVAL_MINUTES).toLong()
             val request = PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES)
                 .setInputData(
@@ -63,14 +77,23 @@ class SyncScheduler(private val context: Context) {
                         )
                         .build(),
                 )
+                .addTag(AUTO_SYNC_TAG)
+                .addTag(PROFILE_TAG_PREFIX + profile.id)
                 .build()
-            WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.UPDATE, request)
+            workManager.enqueueUniquePeriodicWork(
+                periodicWorkName(profile.id),
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request,
+            )
         }
     }
 
     companion object {
         const val MIN_INTERVAL_MINUTES = 15
+
+        /** Tags every periodic auto-sync request and, per profile, its owning profile id. */
+        const val AUTO_SYNC_TAG = "auto-sync"
+        const val PROFILE_TAG_PREFIX = "auto-sync-profile-"
 
         fun nowWorkName(profileId: String): String = "sync-$profileId-now"
 

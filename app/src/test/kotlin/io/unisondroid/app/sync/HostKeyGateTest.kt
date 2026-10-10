@@ -85,20 +85,6 @@ class HostKeyGateTest {
     }
 
     @Test
-    fun `known host returns Trusted without scanning`() = runTest {
-        val tool = FakeSshTool().apply {
-            hostIsKnown = true
-            scannedHostKeys = listOf(ed25519)
-        }
-        val g = gate(tool)
-
-        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
-
-        assertEquals(HostKeyOutcome.Trusted, outcome)
-        assertTrue(tool.scanCalls.isEmpty(), "a known host must not be scanned")
-    }
-
-    @Test
     fun `trusted host is reported without scanning`() = runTest {
         val tool = FakeSshTool().apply { hostIsKnown = true }
         val knownHosts = File(dir, "ssh/known_hosts")
@@ -116,6 +102,16 @@ class HostKeyGateTest {
         val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
 
         assertEquals(HostKeyOutcome.ScanFailed("connection refused"), outcome)
+    }
+
+    @Test
+    fun `host lookup failure returns ScanFailed`() = runTest {
+        val tool = FakeSshTool().apply { isHostKnownException = SshToolException("keygen missing") }
+        val g = gate(tool)
+
+        val outcome = g.ensureTrusted("veryshiny.net", 2222, interactive = true, decisionTimeoutMs = 300_000L) { true }
+
+        assertEquals(HostKeyOutcome.ScanFailed("keygen missing"), outcome)
     }
 
     @Test

@@ -13,6 +13,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -40,12 +41,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val loaded by produceState<AppSettings?>(initialValue = null, settingsRepository) {
         value = settingsRepository.get()
     }
-    var dontSyncOnMobileData by remember(loaded) {
-        mutableStateOf(!(loaded?.syncOnMobileData ?: true))
+    var dontSyncOnMobileData by remember { mutableStateOf<Boolean?>(null) }
+    // Seed once from the persisted value. A late get() must not override a toggle the user
+    // already made, so initialize only while the user has not interacted yet.
+    val seed = loaded
+    LaunchedEffect(seed) {
+        if (seed != null && dontSyncOnMobileData == null) {
+            dontSyncOnMobileData = !seed.syncOnMobileData
+        }
     }
+    val checked = dontSyncOnMobileData ?: !(loaded?.syncOnMobileData ?: true)
 
     SettingsContent(
-        dontSyncOnMobileData = dontSyncOnMobileData,
+        dontSyncOnMobileData = checked,
         onToggle = { enabled ->
             dontSyncOnMobileData = enabled
             scope.launch {

@@ -64,7 +64,8 @@ class ProcessSshToolTest {
     fun `isHostKnown uses bracketed host colon port and reports found`() {
         val keygen = script(
             "find-keygen",
-            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = '[veryshiny.net]:2222' || exit 8; echo found; exit 0",
+            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = '[veryshiny.net]:2222' || exit 8;" +
+                " test \"\$3\" = '-f' || exit 7; case \"\$4\" in */known_hosts) echo found; exit 0;; *) exit 6;; esac",
         )
         val tool = ProcessSshTool(keygen, keygen, dir)
 
@@ -75,7 +76,8 @@ class ProcessSshToolTest {
     fun `isHostKnown uses the bare host on the default port`() {
         val keygen = script(
             "find-keygen-22",
-            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = 'veryshiny.net' || exit 8; echo found; exit 0",
+            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = 'veryshiny.net' || exit 8;" +
+                " test \"\$3\" = '-f' || exit 7; case \"\$4\" in */known_hosts) echo found; exit 0;; *) exit 6;; esac",
         )
         val tool = ProcessSshTool(keygen, keygen, dir)
 

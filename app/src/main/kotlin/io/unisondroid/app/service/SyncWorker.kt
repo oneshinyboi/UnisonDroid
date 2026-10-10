@@ -10,6 +10,11 @@ import kotlinx.coroutines.CancellationException
 /**
  * The single host for a sync run: it promotes to a `dataSync` foreground service for the duration
  * and maps the engine's [SyncOutcome] onto a WorkManager result.
+ *
+ * Note (Android 15): a `dataSync` foreground service is capped at 6h per 24h. If the system
+ * stops the worker mid-run, cancellation propagates through the engine and the run ends as
+ * CANCELLED — WorkManager then decides rescheduling. This is accepted over an explicit retry
+ * because there is no reliable signal to distinguish the cap from a user cancel.
  */
 class SyncWorker(
     appContext: Context,
@@ -34,7 +39,9 @@ class SyncWorker(
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {
-            return Result.retry()
+            // A manual run is user-triggered; silently rescheduling it would run the sync
+            // again later on its own. Only scheduled work retries.
+            return if (mode == SyncMode.UNATTENDED) Result.retry() else Result.failure()
         }
 
         return when (outcome) {

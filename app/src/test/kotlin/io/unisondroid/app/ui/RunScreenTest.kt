@@ -61,6 +61,7 @@ class RunScreenTest {
 
     @After
     fun tearDown() {
+        runCatching { WorkManager.getInstance(RuntimeEnvironment.getApplication()).cancelAllWork() }
         ServiceLocator.engineProvider = ServiceLocator.defaultEngineProvider
         ServiceLocator.reset()
     }

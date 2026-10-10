@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.Clock
@@ -170,7 +171,7 @@ open class SyncEngine(
                     return SyncOutcome.FAILED
                 }
                 is HostKeyOutcome.ScanFailed -> {
-                    failSync(profileId, p, SyncState.Reason.TUNNEL, "Could not scan host keys: ${outcome.detail}")
+                    failSync(profileId, p, SyncState.Reason.TUNNEL, "Could not verify the host key: ${outcome.detail}")
                     return SyncOutcome.FAILED
                 }
             }
@@ -179,7 +180,7 @@ open class SyncEngine(
             keyFile = key
             unisonDir.mkdirs()
             val configFile = File(sshHome, "ssh_config")
-            configFile.writeText(SshConfig.render(key, knownHosts, p.sshPort))
+            writeAtomically(configFile, SshConfig.render(key, knownHosts, p.sshPort))
             val sshCommand = SshCommand(binary = sshBinary, configFile = configFile)
             File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand))
 
@@ -271,6 +272,19 @@ open class SyncEngine(
             keyFile?.delete()
             activeJob = null
         }
+    }
+
+    // Writes the ssh config via a temp file and an atomic rename so a crash mid-write cannot
+    // leave a truncated config behind for the next run.
+    private fun writeAtomically(target: File, contents: String) {
+        val temp = File(target.parentFile, "${target.name}.tmp")
+        temp.writeText(contents)
+        Files.move(
+            temp.toPath(),
+            target.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
     }
 
     private suspend fun writePrivateKey(profile: Profile): File {

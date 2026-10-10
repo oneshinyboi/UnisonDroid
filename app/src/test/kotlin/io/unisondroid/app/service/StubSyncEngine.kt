@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.time.Clock
 
 /**
@@ -39,6 +40,9 @@ class StubSyncEngine : SyncEngine(
     var outcome: SyncOutcome = SyncOutcome.COMPLETED
     var throwOnRequest: Throwable? = null
 
+    /** Counts down when [requestSync] is entered, so tests can await a run without polling. */
+    val requestLatch = CountDownLatch(1)
+
     @Volatile
     var requestedProfileId: String? = null
         private set
@@ -55,6 +59,7 @@ class StubSyncEngine : SyncEngine(
         requestedProfileId = profileId
         requestedMode = mode
         requestCount += 1
+        requestLatch.countDown()
         throwOnRequest?.let { throw it }
         return outcome
     }

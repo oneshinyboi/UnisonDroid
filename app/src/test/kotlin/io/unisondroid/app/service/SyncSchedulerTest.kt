@@ -8,16 +8,19 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.AppSettings
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.SyncMode
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -45,7 +48,7 @@ class SyncSchedulerTest {
 
     @Test
     fun `enabling a profile enqueues periodic work with the mobile-data constraint`() {
-        scheduler.reconcile(
+        reconcile(
             listOf(profile("p1", enabled = true, intervalMinutes = 60)),
             AppSettings(syncOnMobileData = true),
         )
@@ -58,7 +61,7 @@ class SyncSchedulerTest {
 
     @Test
     fun `disabling mobile data uses the unmetered constraint`() {
-        scheduler.reconcile(
+        reconcile(
             listOf(profile("p1", enabled = true, intervalMinutes = 60)),
             AppSettings(syncOnMobileData = false),
         )
@@ -68,18 +71,28 @@ class SyncSchedulerTest {
 
     @Test
     fun `disabling a profile cancels its periodic work`() {
-        scheduler.reconcile(listOf(profile("p1", enabled = true)), AppSettings())
+        reconcile(listOf(profile("p1", enabled = true)), AppSettings())
         assertEquals(WorkInfo.State.ENQUEUED, onlyWork("sync-p1").state)
 
-        scheduler.reconcile(listOf(profile("p1", enabled = false)), AppSettings())
+        reconcile(listOf(profile("p1", enabled = false)), AppSettings())
 
-        val info = onlyWork("sync-p1")
-        assertEquals(WorkInfo.State.CANCELLED, info.state)
+        assertEquals(WorkInfo.State.CANCELLED, onlyWork("sync-p1").state)
+    }
+
+    @Test
+    fun `reconcile cancels the periodic work of a profile that no longer exists`() {
+        reconcile(listOf(profile("p1", enabled = true)), AppSettings())
+        assertEquals(WorkInfo.State.ENQUEUED, onlyWork("sync-p1").state)
+
+        // p1 was deleted: it is simply absent from the list.
+        reconcile(emptyList(), AppSettings())
+
+        assertEquals(WorkInfo.State.CANCELLED, onlyWork("sync-p1").state)
     }
 
     @Test
     fun `reconcile clamps intervals below 15 minutes`() {
-        scheduler.reconcile(
+        reconcile(
             listOf(profile("p1", enabled = true, intervalMinutes = 5)),
             AppSettings(),
         )
@@ -89,7 +102,7 @@ class SyncSchedulerTest {
 
     @Test
     fun `cancel stops a profile's periodic work`() {
-        scheduler.reconcile(listOf(profile("p1", enabled = true)), AppSettings())
+        reconcile(listOf(profile("p1", enabled = true)), AppSettings())
         assertEquals(WorkInfo.State.ENQUEUED, onlyWork("sync-p1").state)
 
         scheduler.cancel("p1")
@@ -105,20 +118,16 @@ class SyncSchedulerTest {
         assertEquals(1, infos.size)
         assertNull("manual sync must be one-shot", infos.first().periodicityInfo)
 
-        awaitEngineRequest()
+        assertTrue("the worker must run", engine.requestLatch.await(10, TimeUnit.SECONDS))
         assertEquals("p42", engine.requestedProfileId)
         assertEquals(SyncMode.INTERACTIVE, engine.requestedMode)
     }
 
+    private fun reconcile(profiles: List<Profile>, settings: AppSettings) =
+        runBlocking { scheduler.reconcile(profiles, settings) }
+
     private fun onlyWork(name: String): WorkInfo =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(name).get().single()
-
-    private fun awaitEngineRequest(timeoutMs: Long = 10_000) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (engine.requestedMode == null && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-        }
-    }
 
     private fun profile(
         id: String,

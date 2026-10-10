@@ -32,7 +32,14 @@ class HostKeyGate(
         decisionTimeoutMs: Long,
         prompt: suspend (fingerprint: String) -> Boolean,
     ): HostKeyOutcome {
-        if (tool.isHostKnown(host, port, knownHostsFile)) return HostKeyOutcome.Trusted
+        val known = try {
+            tool.isHostKnown(host, port, knownHostsFile)
+        } catch (e: SshToolException) {
+            // A failure to consult known_hosts is a connection-level problem, not a
+            // trust decision; report it so the caller maps it to a tunnel failure.
+            return HostKeyOutcome.ScanFailed(e.message ?: "host key lookup failed")
+        }
+        if (known) return HostKeyOutcome.Trusted
         // An unattended sync must never scan or prompt: it has no UI to answer,
         // so an unknown host is reported as untrusted for a later interactive run.
         if (!interactive) return HostKeyOutcome.Untrusted

@@ -2,6 +2,7 @@ package io.unisondroid.app.ui
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.util.Log
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,6 +65,8 @@ const val BROWSE_LOCAL = "editor-browseLocal"
 const val SAVE_BUTTON = "editor-save"
 const val VALIDATION_ERROR = "editor-validationError"
 
+private const val TAG = "ProfileEditorScreen"
+
 val AUTO_SYNC_INTERVALS_MINUTES = listOf(15, 30, 60, 180, 360, 720, 1440)
 
 internal fun intervalLabel(minutes: Int): String =
@@ -92,7 +95,8 @@ fun ProfileEditorScreen(
             try {
                 batteryLauncher.launch(intent)
             } catch (e: ActivityNotFoundException) {
-                // No handler available: skip the exemption prompt.
+                // No handler available: skip the exemption prompt, but leave a trace.
+                Log.w(TAG, "no activity to handle battery-optimization request", e)
             }
         }
     }

@@ -12,8 +12,8 @@ object SshConfig {
     fun render(keyFile: File, knownHosts: File, port: Int): String {
         val sb = StringBuilder()
         sb.append("Host *\n")
-        sb.append("  IdentityFile ").append(keyFile.absolutePath).append('\n')
-        sb.append("  UserKnownHostsFile ").append(knownHosts.absolutePath).append('\n')
+        sb.append("  IdentityFile ").append(configValue(keyFile.absolutePath)).append('\n')
+        sb.append("  UserKnownHostsFile ").append(configValue(knownHosts.absolutePath)).append('\n')
         sb.append("  GlobalKnownHostsFile /dev/null\n")
         sb.append("  StrictHostKeyChecking yes\n")
         sb.append("  BatchMode yes\n")
@@ -22,4 +22,16 @@ object SshConfig {
         sb.append("  Port ").append(port).append('\n')
         return sb.toString()
     }
+
+    /**
+     * ssh_config values are whitespace-separated, so a path containing whitespace, a
+     * double quote, or a backslash is quoted with backslashes and quotes escaped to keep
+     * it a single token.
+     */
+    private fun configValue(value: String): String =
+        if (value.none { it.isWhitespace() || it == '"' || it == '\\' }) {
+            value
+        } else {
+            "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        }
 }

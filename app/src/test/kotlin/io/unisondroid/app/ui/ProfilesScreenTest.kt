@@ -1,10 +1,15 @@
 package io.unisondroid.app.ui
 
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
+import io.unisondroid.app.data.AppSettings
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.data.SyncResult
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -22,7 +27,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
@@ -130,6 +134,42 @@ class ProfilesScreenTest {
 
         compose.waitUntil(5_000) { runBlocking { repository.profiles() }.isEmpty() }
         compose.onNodeWithText("My Server").assertDoesNotExist()
+    }
+
+    @Test
+    fun `deleting an auto-sync profile cancels its scheduled work`() {
+        val context = RuntimeEnvironment.getApplication()
+        runBlocking {
+            repository.save(profile(id = "p1", name = "My Server").copy(autoSyncEnabled = true))
+            SyncScheduler(context).reconcile(repository.profiles(), AppSettings())
+        }
+        assertEquals(
+            WorkInfo.State.ENQUEUED,
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(SyncScheduler.periodicWorkName("p1"))
+                .get()
+                .single()
+                .state,
+        )
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(onOpenProfile = {}, onStartSync = {})
+            }
+        }
+
+        awaitTag("${PROFILE_DELETE_PREFIX}p1")
+        compose.onNodeWithTag("${PROFILE_DELETE_PREFIX}p1").performClick()
+        awaitTag(DELETE_CONFIRM_TAG)
+        compose.onNodeWithTag(DELETE_CONFIRM_TAG).performClick()
+
+        compose.waitUntil(5_000) {
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(SyncScheduler.periodicWorkName("p1"))
+                .get()
+                .singleOrNull()
+                ?.state == WorkInfo.State.CANCELLED
+        }
     }
 
     @Test

@@ -122,6 +122,15 @@ class SyncWorkerTest {
     }
 
     @Test
+    fun `engine exception returns failure for interactive work`() {
+        engine.throwOnRequest = IllegalStateException("boom")
+
+        val result = runBlocking { worker("p1", SyncMode.INTERACTIVE).doWork() }
+
+        assertEquals(ListenableWorker.Result.failure(), result)
+    }
+
+    @Test
     fun `foreground failure does not crash the worker`() {
         engine.outcome = SyncOutcome.COMPLETED
 

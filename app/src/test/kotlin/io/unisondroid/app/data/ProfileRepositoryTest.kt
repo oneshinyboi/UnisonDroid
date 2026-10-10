@@ -2,6 +2,7 @@ package io.unisondroid.app.data
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -69,5 +70,17 @@ class ProfileRepositoryTest {
             assertTrue(Regex("[a-z0-9-]{8}").matches(id), "expected [a-z0-9-]{8} slug, got: $id")
         }
         assertEquals(ids.size, ids.distinct().size)
+    }
+
+    @Test
+    fun `profiles saved before the schedule fields existed still load`(@TempDir dir: File) = runTest {
+        File(dir, "profiles.json").writeText(
+            """[{"id":"p1","name":"Phone","localRoot":"/l","remoteRoot":"/r","host":"h","user":"u","sshKeyId":"k"}]""",
+        )
+
+        val loaded = ProfileRepository(JsonStore(dir)).profiles().single()
+
+        assertFalse(loaded.autoSyncEnabled)
+        assertEquals(60, loaded.autoSyncIntervalMinutes)
     }
 }

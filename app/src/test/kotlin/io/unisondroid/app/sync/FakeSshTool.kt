@@ -13,6 +13,7 @@ class FakeSshTool : SshTool {
     var scannedHostKeys: List<HostKeyEntry> = emptyList()
     var scanException: SshToolException? = null
     var hostIsKnown: Boolean = false
+    var isHostKnownException: SshToolException? = null
 
     val generateCalls = mutableListOf<String>()
     val deriveCalls = mutableListOf<String>()
@@ -38,6 +39,7 @@ class FakeSshTool : SshTool {
 
     override fun isHostKnown(host: String, port: Int, knownHosts: File): Boolean {
         knownCalls += Triple(host, port, knownHosts)
+        isHostKnownException?.let { throw it }
         return hostIsKnown
     }
 }

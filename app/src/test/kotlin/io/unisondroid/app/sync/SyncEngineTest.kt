@@ -116,7 +116,7 @@ class SyncEngineTest {
     fun `unknown host key pauses for decision and approval resumes sync`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
-            knownFingerprint = null,
+            hostIsKnown = false,
         )
         val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
@@ -139,7 +139,7 @@ class SyncEngineTest {
     fun `declined host key fails with AUTH and never runs unison`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = emptyList())),
-            knownFingerprint = null,
+            hostIsKnown = false,
         )
         val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
         awaitState(h.engine) { it is SyncState.AwaitingHostKey }
@@ -159,7 +159,7 @@ class SyncEngineTest {
     fun `host key approval timeout fails with TUNNEL not a user decline`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = emptyList())),
-            knownFingerprint = null,
+            hostIsKnown = false,
             hostKeyDecisionTimeoutMs = 100L,
         )
         val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
@@ -180,25 +180,27 @@ class SyncEngineTest {
     fun `host key scan failure fails with TUNNEL`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = emptyList())),
-            knownFingerprint = null,
+            hostIsKnown = false,
             scannedHostKeys = emptyList(),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncOutcome.FAILED, outcome)
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
-        assertTrue(failed.detail.contains("scan", ignoreCase = true), "detail was: ${failed.detail}")
+        assertTrue(failed.detail.contains("host key", ignoreCase = true), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
     }
 
     @Test
     fun `unattended sync with unknown host key skips without scanning or prompting`() = runTest {
-        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))), knownFingerprint = null)
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))), hostIsKnown = false)
         val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.UNATTENDED) }
         assertEquals(SyncOutcome.SKIPPED_UNTRUSTED, outcome)
         assertTrue(h.runner.starts.isEmpty())
         assertTrue(h.sshTool.scanCalls.isEmpty(), "unattended must not scan")
+        assertTrue(h.engine.state.value !is SyncState.AwaitingHostKey, "unattended must never enter the prompt state")
         assertNull(h.repo.get("prof1")?.lastResult, "a skip must not mark the profile failed")
     }
 
@@ -258,9 +260,10 @@ class SyncEngineTest {
             binaryAvailable = false,
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncOutcome.FAILED, outcome)
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
         assertTrue(failed.detail.contains("libunison.so"), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
@@ -274,9 +277,10 @@ class SyncEngineTest {
             sshBinaryAvailable = false,
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncOutcome.FAILED, outcome)
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
         assertTrue(failed.detail.contains("libssh.so"), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
@@ -371,9 +375,10 @@ class SyncEngineTest {
             ),
         )
 
-        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
 
         val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncOutcome.FAILED, outcome)
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
     }
 
@@ -460,7 +465,7 @@ class SyncEngineTest {
     private suspend fun harness(
         scripts: List<ScriptedProcess>,
         profileIds: List<String> = listOf("prof1", "prof2"),
-        knownFingerprint: String? = SERVER_FINGERPRINT,
+        hostIsKnown: Boolean = true,
         binaryAvailable: Boolean = true,
         sshBinaryAvailable: Boolean = true,
         hostKeyDecisionTimeoutMs: Long = 300_000L,
@@ -484,7 +489,7 @@ class SyncEngineTest {
         val events = mutableListOf<String>()
         val sshTool = FakeSshTool().apply {
             this.scannedHostKeys = scannedHostKeys
-            this.hostIsKnown = knownFingerprint != null
+            this.hostIsKnown = hostIsKnown
         }
         val runner = FakeRunner(scripts, events, onStart)
         val engine = SyncEngine(
