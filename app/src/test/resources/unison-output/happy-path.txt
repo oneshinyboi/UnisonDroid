@@ -1,8 +1,5 @@
 [wnd] connected [ssh://server.example//srv/sync]
 Looking for changes
-[wnt] ...  0/345 KiB  photos/vacation.jpg[wnt] ...  12/345 KiB  photos/vacation.jpg[wnt] ...  345/345 KiB  photos/vacation.jpg
-[wnt] ...  18/18 KiB  notes/todo.txt
-[wnt] ...  0/1024 KiB  video/clip.mp4[wnt] ...  512/1024 KiB  video/clip.mp4[wnt] ...  1024/1024 KiB  video/clip.mp4
-[wnt] ...  2/2 KiB  config/settings.json
+ 12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA 50%   5/10  (2.3 MiB of 4.5 MiB)  250 KiB/s    00:09 ETA100%  10/10  (4.5 MiB of 4.5 MiB)  00:00:00 ETA
 Saving synchronizer state
-Synchronization complete ... 4 files ... 1389 KiB transferred
+Synchronization complete ... 10 files ... 4.5 MiB transferred

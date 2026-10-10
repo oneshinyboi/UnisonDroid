@@ -24,54 +24,67 @@ class OutputParserTest {
 
     @Test
     fun `progress lines emit fraction and label`() {
-        val (parser, events) = feedAll("[wnt] ...  12/345 KiB  photos/vacation.jpg\n")
+        val raw = " 12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA"
+        val (parser, events) = feedAll("$raw\n")
 
         assertEquals(
-            listOf(SyncEvent.Progress(12f / 345f, "photos/vacation.jpg")),
+            listOf(SyncEvent.Progress(0.12f, raw.trim())),
             events,
         )
-        assertEquals(SyncSummary(0, 0, 0), parser.finalize(0))
+        assertEquals(SyncSummary(3, 0, 0), parser.finalize(0))
+    }
+
+    @Test
+    fun `real progress line yields overall fraction`() {
+        val (_, events) = feedAll(fixture("progress.txt"))
+        assertEquals(0.12f, (events[0] as SyncEvent.Progress).fraction, 0.001f)
+        assertEquals(1.0f, (events[1] as SyncEvent.Progress).fraction, 0.001f)
     }
 
     @Test
     fun `line split across carriage return fragments is reassembled`() {
+        val line1 = " 12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA"
+        val line2 = "100%  10/10  (4.5 MiB of 4.5 MiB)  00:00:00 ETA"
         val parser = OutputParser()
 
-        assertTrue(parser.feed("[wnt] ...  12/345 KiB  pho").isEmpty())
+        assertTrue(parser.feed(line1.substring(0, 30)).isEmpty())
         assertEquals(
-            listOf(SyncEvent.Progress(12f / 345f, "photos/vacation.jpg")),
-            parser.feed("tos/vacation.jpg\r[wnt] ...  345/345 KiB  photos/vacat"),
+            listOf(SyncEvent.Progress(0.12f, line1.trim())),
+            parser.feed(line1.substring(30) + "\r" + line2.substring(0, 20)),
         )
         assertEquals(
-            listOf(SyncEvent.Progress(1f, "photos/vacation.jpg")),
-            parser.feed("ion.jpg\r"),
+            listOf(SyncEvent.Progress(1.0f, line2)),
+            parser.feed(line2.substring(20) + "\r"),
         )
-        assertEquals(SyncSummary(1, 0, 0), parser.finalize(0))
+        assertEquals(SyncSummary(10, 0, 0), parser.finalize(0))
     }
 
     @Test
     fun `crlf split across fragments yields no stray events`() {
+        val line1 = " 50%   1/2  (0.5 MiB of 1.0 MiB)  1.0 MiB/s    00:01 ETA"
+        val line2 = "100%   2/2  (1.0 MiB of 1.0 MiB)  00:00:00 ETA"
         val parser = OutputParser()
 
-        assertEquals(1, parser.feed("[wnt] ...  1/2 KiB  a.txt\r").size)
+        assertEquals(1, parser.feed("$line1\r").size)
         assertEquals(
-            listOf(SyncEvent.Progress(1f, "a.txt")),
-            parser.feed("\n[wnt] ...  2/2 KiB  a.txt\r\n"),
+            listOf(SyncEvent.Progress(1.0f, line2)),
+            parser.feed("\n$line2\r\n"),
         )
     }
 
     @Test
     fun `line longer than 4 KiB keeps trailing events`() {
         val label = "x".repeat(5000)
+        val progressLine = "100%  1/1  (1.0 MiB of 1.0 MiB)  $label  00:00:00 ETA"
         val text =
-            "[wnt] ...  1/1 KiB  $label\n" +
+            "$progressLine\n" +
                 "Synchronization complete ... 1 files ... 1 KiB transferred\n"
         val (parser, events) = feedAll(text, chunkSize = 1024)
 
         assertEquals(2, events.size)
         val progress = events[0] as SyncEvent.Progress
         assertEquals(1f, progress.fraction)
-        assertEquals(label, progress.label)
+        assertEquals(progressLine, progress.label)
         assertEquals(SyncEvent.Completed, events[1])
         assertEquals(SyncSummary(1, 0, 0), parser.finalize(0))
     }
@@ -82,19 +95,14 @@ class OutputParserTest {
 
         assertEquals(
             listOf(
-                SyncEvent.Progress(0f, "photos/vacation.jpg"),
-                SyncEvent.Progress(12f / 345f, "photos/vacation.jpg"),
-                SyncEvent.Progress(1f, "photos/vacation.jpg"),
-                SyncEvent.Progress(1f, "notes/todo.txt"),
-                SyncEvent.Progress(0f, "video/clip.mp4"),
-                SyncEvent.Progress(0.5f, "video/clip.mp4"),
-                SyncEvent.Progress(1f, "video/clip.mp4"),
-                SyncEvent.Progress(1f, "config/settings.json"),
+                SyncEvent.Progress(0.12f, "12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA"),
+                SyncEvent.Progress(0.5f, "50%   5/10  (2.3 MiB of 4.5 MiB)  250 KiB/s    00:09 ETA"),
+                SyncEvent.Progress(1f, "100%  10/10  (4.5 MiB of 4.5 MiB)  00:00:00 ETA"),
                 SyncEvent.Completed,
             ),
             events,
         )
-        assertEquals(SyncSummary(transferred = 4, failed = 0, conflicts = 0), parser.finalize(0))
+        assertEquals(SyncSummary(transferred = 10, failed = 0, conflicts = 0), parser.finalize(0))
     }
 
     @Test
@@ -170,9 +178,10 @@ class OutputParserTest {
 
     @Test
     fun `loose mismatch substrings in paths do not outrank specific matchers`() {
-        val (_, progressEvents) = feedAll("[wnt] ...  1/2 KiB  docs/incompatible.md\n")
+        val progressLine = " 50%   1/2  (1.0 MiB of 2.0 MiB)  docs/incompatible.md  00:01 ETA"
+        val (_, progressEvents) = feedAll("$progressLine\n")
         assertEquals(
-            listOf(SyncEvent.Progress(0.5f, "docs/incompatible.md")),
+            listOf(SyncEvent.Progress(0.5f, progressLine.trim())),
             progressEvents,
         )
 
@@ -201,16 +210,15 @@ class OutputParserTest {
     }
 
     @Test
-    fun `without summary line transferred falls back to completed progress count`() {
+    fun `without summary line transferred falls back to last progress item count`() {
         val parser = OutputParser()
 
         parser.feed(
-            "[wnt] ...  1/345 KiB  a.txt\n" +
-                "[wnt] ...  345/345 KiB  a.txt\n" +
-                "[wnt] ...  0/9 KiB  b.txt\n",
+            "  1%   1/345  (1.0 MiB of 345 MiB)  1.0 MiB/s    01:00 ETA\n" +
+                " 50%   5/9  (5.0 MiB of 9.0 MiB)  1.0 MiB/s    00:05 ETA\n",
         )
 
-        assertEquals(SyncSummary(transferred = 1, failed = 0, conflicts = 0), parser.finalize(0))
+        assertEquals(SyncSummary(transferred = 5, failed = 0, conflicts = 0), parser.finalize(0))
     }
 
     @Test

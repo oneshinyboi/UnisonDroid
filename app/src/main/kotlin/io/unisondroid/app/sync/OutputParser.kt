@@ -22,7 +22,7 @@ class OutputParser {
     private var swallowLeadingLf = false
     private var conflicts = 0
     private var failed = 0
-    private var completedTransfers = 0
+    private var lastProgressCount = 0
     private var transferredFromSummary: Int? = null
 
     fun feed(chunk: String): List<SyncEvent> {
@@ -55,7 +55,7 @@ class OutputParser {
             pending.setLength(0)
         }
         return SyncSummary(
-            transferred = transferredFromSummary ?: completedTransfers,
+            transferred = transferredFromSummary ?: lastProgressCount,
             failed = failed,
             conflicts = conflicts,
         )
@@ -80,15 +80,9 @@ class OutputParser {
             }
 
             progress != null -> {
-                val done = progress.groupValues[1].toInt()
-                val total = progress.groupValues[2].toInt()
-                val fraction = when {
-                    total > 0 -> done.toFloat() / total
-                    done > 0 -> 1f
-                    else -> 0f
-                }
-                if (fraction >= 1f) completedTransfers++
-                SyncEvent.Progress(fraction, progress.groupValues[3].trim())
+                val pct = progress.groupValues[1].toInt()
+                lastProgressCount = progress.groupValues[2].toInt()
+                SyncEvent.Progress(pct / 100f, line)
             }
 
             line.contains(FAILED_MARKER) -> {
@@ -142,7 +136,7 @@ class OutputParser {
     companion object {
         private val ANSI_ESCAPE = Regex(Char(27) + "\\[[0-9;?]*[A-Za-z]")
 
-        private val PROGRESS = Regex("^\\[[A-Za-z]+]\\s+\\.\\.\\.\\s+(\\d+)/(\\d+)\\s+KiB\\s+(.*)$")
+        private val PROGRESS = Regex("""^\s*(\d{1,3})%\s+(\d+)/(\d+)\s+\(([^)]*) of ([^)]*)\)\s+.*ETA\s*$""")
 
         private val ITEMS_TRANSFERRED = Regex("(\\d+)\\s+items?\\s+transferred")
 

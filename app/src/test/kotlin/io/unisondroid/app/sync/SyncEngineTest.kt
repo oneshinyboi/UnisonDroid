@@ -291,7 +291,7 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(
-                    lines = listOf("[wnt] ...  1/2 KiB  a.txt", "Error: something exploded", "Unison server: fatal"),
+                    lines = listOf(PROGRESS_LINE, "Error: something exploded", "Unison server: fatal"),
                     exit = 3,
                 ),
             ),
@@ -578,7 +578,7 @@ class SyncEngineTest {
         const val REMOTE_SOCKET_PORT = 22333
         val SERVER_FINGERPRINT = "SHA256:" + "A".repeat(43)
         val SERVER_KNOWN_HOSTS_LINE = "[$HOST]:$SSH_PORT ssh-ed25519 AAAAad-hoc"
-        val PROGRESS_LINE = "[wnt] ...  5/10 KiB  photos/vacation.jpg"
+        val PROGRESS_LINE = " 50%   5/10  (5.0 MiB of 10 MiB)  1.0 MiB/s    00:05 ETA"
         val SUMMARY_LINE = "Synchronization complete at 21:33:33  (2 items transferred, 0 skipped, 0 failed)"
         val FAKE_BINARY = File("/nowhere/libunison.so")
 
