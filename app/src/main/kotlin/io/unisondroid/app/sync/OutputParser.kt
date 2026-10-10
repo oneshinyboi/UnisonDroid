@@ -2,6 +2,11 @@ package io.unisondroid.app.sync
 
 import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.FailedRecord
+import io.unisondroid.app.data.SideInfo
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 sealed interface SyncEvent {
     data class Progress(val fraction: Float, val label: String) : SyncEvent
@@ -42,6 +47,12 @@ class OutputParser {
     private val failedWithoutPath = mutableListOf<FailedRecord>()
     private var lastProgressCount = 0
     private var transferredFromSummary: Int? = null
+
+    // The conflict display block: a recon line (`<-?->`/`<=?=>`) sets the path, then
+    // up to two detail lines follow (first side = local, second = remote). A blank
+    // line or the next recon line closes the block.
+    private var pendingDisplayPath: String? = null
+    private var pendingSideIndex = 0
 
     fun feed(chunk: String): List<SyncEvent> {
         if (chunk.isEmpty()) return emptyList()
@@ -90,7 +101,10 @@ class OutputParser {
 
     private fun parseLine(rawLine: String): List<SyncEvent> {
         val line = ANSI_ESCAPE.replace(rawLine, "").trim()
-        if (line.isEmpty()) return emptyList()
+        if (line.isEmpty()) {
+            closeDisplayBlock()
+            return emptyList()
+        }
 
         if (isKnownUnisonMismatch(line)) return listOf(SyncEvent.VersionMismatch(line))
 
@@ -134,6 +148,29 @@ class OutputParser {
             return emptyList()
         }
 
+        // Recon line (fixed-width replica columns + 5-char action + full path).
+        RECON_LINE.find(line)?.let { match ->
+            closeDisplayBlock()
+            val action = match.groupValues[2]
+            if (action == CONFLICT_ACTION || action == CONFLICT_ACTION_FORCED) {
+                pendingDisplayPath = match.groupValues[4]
+                pendingSideIndex = 0
+            }
+            return emptyList()
+        }
+
+        // Detail line, only meaningful while a conflict block is open. The `\s+:` guard
+        // keeps `skipped:`/`failed:` lines out (they have no space before the colon).
+        pendingDisplayPath?.let { displayPath ->
+            DETAIL_LINE.find(line)?.let { match ->
+                val rest = match.groupValues[2]
+                if (DETAIL_SIZE.containsMatchIn(rest)) {
+                    applyDisplaySide(displayPath, rest)
+                    return emptyList()
+                }
+            }
+        }
+
         if (line.contains("different versions", ignoreCase = true) ||
             line.contains("incompatible", ignoreCase = true)
         ) {
@@ -153,6 +190,41 @@ class OutputParser {
         }
     }
 
+    private fun closeDisplayBlock() {
+        pendingDisplayPath = null
+        pendingSideIndex = 0
+    }
+
+    // Sides are written into the path-keyed map as soon as they are seen, so the
+    // record exists even before the later `skipped:` line supplies the reason; the
+    // skip handler then merges that in without dropping the sides.
+    private fun applyDisplaySide(path: String, rest: String) {
+        val size = DETAIL_SIZE.find(rest)?.groupValues?.get(1)?.toLongOrNull()
+        val timeText = DETAIL_TIME.find(rest)?.groupValues?.get(1)
+        val kind = rest.substringBefore("modified on").trim().ifBlank { null }
+        val side = SideInfo(sizeBytes = size, modifiedAt = parseSideTime(timeText), kind = kind)
+        val existing = conflictsByPath[path] ?: ConflictRecord(path = path)
+        conflictsByPath[path] =
+            if (pendingSideIndex == 0) existing.copy(local = side) else existing.copy(remote = side)
+        pendingSideIndex++
+    }
+
+    // Unison's `Time.toString` is `%4d-%02d-%02d at %2d:%.2d:%.2d`, so the hour is
+    // space-padded (`... at  3:04:05`). Collapse the whitespace and parse leniently,
+    // leaving the timestamp null rather than throwing on an unexpected format.
+    private fun parseSideTime(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
+        val normalized = raw.trim().replace(WHITESPACE_RUN, " ")
+        return try {
+            LocalDateTime.parse(normalized, SIDE_TIME_FORMATTER)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
     private fun isKnownUnisonMismatch(line: String): Boolean =
         REAL_MISMATCH_MARKERS.any { line.contains(it) }
 
@@ -169,6 +241,27 @@ class OutputParser {
             Regex("""Synchronization (?:complete|incomplete) at \d{2}:\d{2}:\d{2}\s+\((\d+) items? transferred, (?:(\d+) partially transferred, )?(\d+) skipped, (\d+) failed.*\)""")
 
         private val SKIP = Regex("""^\s*skipped:\s+(.*?)\s+\((.*)\)\s*$""")
+
+        // `displayri` recon line: two fixed 8-char replica columns, a 5-char action,
+        // then the full relative path (`uitext.ml:419`).
+        private val RECON_LINE = Regex("""^(.{8}) (error|[-<=>?M]{5}) (.{8}) {3}(.*?)\s*$""")
+
+        // `details2string`: `<root padded to 12> : <status>  <props>` (`uicommon.ml:306`).
+        // The `\s+:` requires whitespace before the colon, so `skipped:`/`failed:` do not match.
+        private val DETAIL_LINE = Regex("""^(local|\S.*?)\s+:\s+(.*)$""")
+
+        // `Props.toString`: `modified on <time>  size <n> <perms...>` (`props.ml:1413`).
+        private val DETAIL_SIZE = Regex("""\bsize\s+(\d+)""")
+
+        private val DETAIL_TIME = Regex("""modified on (.+?)\s\s+size\b""")
+
+        private val WHITESPACE_RUN = Regex("""\s+""")
+
+        private val SIDE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd 'at' H:mm:ss")
+
+        private const val CONFLICT_ACTION = "<-?->"
+
+        private const val CONFLICT_ACTION_FORCED = "<=?=>"
 
         private val FAILED_FILE = Regex("""^\s*failed:\s+(.*)$""")
 

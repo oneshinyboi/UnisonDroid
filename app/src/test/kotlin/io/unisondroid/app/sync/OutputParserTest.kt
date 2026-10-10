@@ -3,6 +3,8 @@ package io.unisondroid.app.sync
 import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.FailedRecord
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -307,6 +309,75 @@ class OutputParserTest {
             s.conflicts.filter { it.resolvable },
         )
         assertTrue(s.conflicts.any { !it.resolvable }, "the symbolic-link problem must be recorded as unresolvable")
+    }
+
+    @Test
+    fun `display block fills both sides`() {
+        val c = feedFinalize("display-block.txt").conflicts.single()
+
+        assertEquals("notes/plan.txt", c.path)
+        assertEquals(1234L, c.local?.sizeBytes)
+        assertEquals(5678L, c.remote?.sizeBytes)
+        assertNotNull(c.local?.modifiedAt)
+        assertNotNull(c.remote?.modifiedAt)
+        assertEquals("conflicting updates", c.reason)
+    }
+
+    @Test
+    fun `display block split by carriage returns and one-char chunks yields the same record`() {
+        val text = fixture("display-block.txt").replace("\n", "\r")
+
+        val whole = feedAll(text).first.finalize(0).conflicts.single()
+        val chunked = feedAll(text, chunkSize = 1).first.finalize(0).conflicts.single()
+
+        assertEquals(whole, chunked)
+        assertEquals(1234L, chunked.local?.sizeBytes)
+        assertEquals(5678L, chunked.remote?.sizeBytes)
+        assertEquals("conflicting updates", chunked.reason)
+    }
+
+    @Test
+    fun `missing display block still yields the conflict with null sides`() {
+        val c = feedFinalize("skips.txt").conflicts.first { it.path == "notes/plan.txt" }
+
+        assertNull(c.local)
+        assertNull(c.remote)
+        assertEquals("conflicting updates", c.reason)
+    }
+
+    @Test
+    fun `display block path with spaces keeps the full path`() {
+        val text =
+            "changed  <-?-> changed    My Folder/file.txt\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 42    -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 99    -rw-r--r--\n" +
+                "\n" +
+                "  skipped: My Folder/file.txt (conflicting updates)\n"
+        val c = feedAll(text).first.finalize(0).conflicts.single()
+
+        assertEquals("My Folder/file.txt", c.path)
+        assertEquals(42L, c.local?.sizeBytes)
+        assertEquals(99L, c.remote?.sizeBytes)
+    }
+
+    @Test
+    fun `consecutive display blocks produce one record each and do not cross-attach`() {
+        val text =
+            "changed  <-?-> changed    a.txt\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 1     -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 2     -rw-r--r--\n" +
+                "  skipped: a.txt (conflicting updates)\n" +
+                "changed  <=?=> changed    b.txt\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 3     -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 4     -rw-r--r--\n" +
+                "  skipped: b.txt (conflicting updates)\n"
+        val conflicts = feedAll(text).first.finalize(0).conflicts
+
+        assertEquals(listOf("a.txt", "b.txt"), conflicts.map { it.path })
+        assertEquals(1L, conflicts[0].local?.sizeBytes)
+        assertEquals(2L, conflicts[0].remote?.sizeBytes)
+        assertEquals(3L, conflicts[1].local?.sizeBytes)
+        assertEquals(4L, conflicts[1].remote?.sizeBytes)
     }
 
     @Test
