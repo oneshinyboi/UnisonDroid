@@ -137,7 +137,7 @@ object ServiceLocator {
             profiles = profiles(context),
             keys = keys(context),
             sshTool = sshTool(context),
-            runnerFactory = { UnisonRunner(it) },
+            runnerFactory = { UnisonRunner(it, context.cacheDir) },
             parserFactory = { OutputParser() },
             unisonDir = File(context.noBackupFilesDir, "unison"),
             sshHome = File(context.noBackupFilesDir, "ssh"),

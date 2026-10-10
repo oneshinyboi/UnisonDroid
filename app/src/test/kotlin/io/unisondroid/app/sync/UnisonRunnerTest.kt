@@ -135,6 +135,42 @@ class UnisonRunnerTest {
     }
 
     @Test
+    fun `carriage returns split lines like the old pipe reader`() {
+        val binary = fakeUnison(
+            "cr-unison",
+            """
+            #!/bin/sh
+            printf 'a\rb\r\nc\n'
+            """.trimIndent(),
+        )
+
+        val lines = runBlocking { UnisonRunner(binary).start(emptyMap(), emptyList()).output.toList() }
+
+        assertEquals(listOf("a", "b", "c"), lines)
+    }
+
+    @Test
+    fun `a large output burst is captured in full`() {
+        val binary = fakeUnison(
+            "burst-unison",
+            """
+            #!/bin/sh
+            i=0
+            while [ ${'$'}i -lt 5000 ]; do
+              echo "line-${'$'}i"
+              i=$((i+1))
+            done
+            """.trimIndent(),
+        )
+
+        val lines = runBlocking { UnisonRunner(binary).start(emptyMap(), emptyList()).output.toList() }
+
+        assertEquals(5000, lines.size)
+        assertEquals("line-0", lines.first())
+        assertEquals("line-4999", lines.last())
+    }
+
+    @Test
     fun `locate returns Available pointing at the named file when present`() {
         val nativeDir = File(tempDir, "native").apply { mkdirs() }
         val lib = File(nativeDir, "libunison_2_53_8.so").apply { writeText("fake-so") }
