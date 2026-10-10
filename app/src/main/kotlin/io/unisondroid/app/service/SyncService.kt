@@ -12,7 +12,6 @@ import androidx.core.app.ServiceCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.unisondroid.app.MainActivity
-import io.unisondroid.app.data.HostKeyStore
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.KeystoreAesCipher
@@ -296,7 +295,6 @@ object ServiceLocator {
             binaryLocator = BinaryLocator(File(context.applicationInfo.nativeLibraryDir)),
             profiles = profiles(context),
             keys = keys(context),
-            hostKeys = HostKeyStore(store(context)),
             sshTool = sshTool(context),
             runnerFactory = { UnisonRunner(it) },
             parserFactory = { OutputParser() },

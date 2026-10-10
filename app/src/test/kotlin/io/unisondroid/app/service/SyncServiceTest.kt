@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Looper
-import io.unisondroid.app.data.HostKeyStore
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -290,7 +289,6 @@ private class TestSyncEngine : SyncEngine(
     BinaryLocator(File("/nonexistent/native-lib")),
     ProfileRepository(JsonStore(File("/nonexistent/data"))),
     KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher, FakeSshTool()),
-    HostKeyStore(JsonStore(File("/nonexistent/data"))),
     FakeSshTool(),
     { UnisonRunner(it) },
     { OutputParser() },

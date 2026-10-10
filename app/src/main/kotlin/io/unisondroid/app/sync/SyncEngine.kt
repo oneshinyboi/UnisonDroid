@@ -1,6 +1,5 @@
 package io.unisondroid.app.sync
 
-import io.unisondroid.app.data.HostKeyStore
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
@@ -48,7 +47,6 @@ open class SyncEngine(
     private val binaryLocator: BinaryLocator,
     private val profiles: ProfileRepository,
     private val keys: KeyVault,
-    private val hostKeys: HostKeyStore,
     private val sshTool: SshTool,
     private val runnerFactory: (File) -> UnisonRunner,
     private val parserFactory: () -> OutputParser,
@@ -134,7 +132,7 @@ open class SyncEngine(
             _state.value = SyncState.Connecting(profileId)
 
             val knownHosts = File(sshHome, "known_hosts")
-            val outcome = HostKeyGate(sshTool, hostKeys, knownHosts)
+            val outcome = HostKeyGate(sshTool, knownHosts)
                 .ensureTrusted(p.host, p.sshPort, hostKeyDecisionTimeoutMs) { fingerprint ->
                     val pending = CompletableDeferred<Boolean>()
                     pendingDecision = pending

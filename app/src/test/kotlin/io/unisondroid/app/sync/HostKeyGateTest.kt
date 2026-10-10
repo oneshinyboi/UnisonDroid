@@ -1,7 +1,5 @@
 package io.unisondroid.app.sync
 
-import io.unisondroid.app.data.HostKeyStore
-import io.unisondroid.app.data.JsonStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -30,17 +28,14 @@ class HostKeyGateTest {
         fingerprint = "SHA256:rsafingerprint",
     )
 
-    private fun gate(tool: FakeSshTool): HostKeyGate {
-        val store = JsonStore(dir)
-        return HostKeyGate(tool, HostKeyStore(store), File(dir, "ssh/known_hosts"))
-    }
+    private fun gate(tool: FakeSshTool): HostKeyGate =
+        HostKeyGate(tool, File(dir, "ssh/known_hosts"))
 
     @Test
     fun `unknown host scans prompts and persists on approval`() = runTest {
         val tool = FakeSshTool().apply { scannedHostKeys = listOf(ed25519, rsa) }
-        val hostKeys = HostKeyStore(JsonStore(dir))
         val knownHosts = File(dir, "ssh/known_hosts")
-        val g = HostKeyGate(tool, hostKeys, knownHosts)
+        val g = HostKeyGate(tool, knownHosts)
         val prompted = mutableListOf<String>()
 
         val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { fp ->
@@ -53,7 +48,6 @@ class HostKeyGateTest {
         assertEquals(listOf("veryshiny.net" to 2222), tool.scanCalls)
         assertTrue(knownHosts.readText().contains(ed25519.knownHostsLine), "got:\n${knownHosts.readText()}")
         assertFalse(knownHosts.readText().contains(rsa.knownHostsLine))
-        assertEquals("SHA256:ed25519fingerprint", hostKeys.known("veryshiny.net", 2222)?.fingerprint)
         val perms = java.nio.file.Files.getPosixFilePermissions(knownHosts.toPath())
         assertEquals(setOf(java.nio.file.attribute.PosixFilePermission.OWNER_READ, java.nio.file.attribute.PosixFilePermission.OWNER_WRITE), perms)
     }
@@ -61,15 +55,13 @@ class HostKeyGateTest {
     @Test
     fun `declined prompt returns Declined and persists nothing`() = runTest {
         val tool = FakeSshTool().apply { scannedHostKeys = listOf(ed25519) }
-        val hostKeys = HostKeyStore(JsonStore(dir))
         val knownHosts = File(dir, "ssh/known_hosts")
-        val g = HostKeyGate(tool, hostKeys, knownHosts)
+        val g = HostKeyGate(tool, knownHosts)
 
         val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { false }
 
         assertEquals(HostKeyOutcome.Declined("SHA256:ed25519fingerprint"), outcome)
         assertFalse(knownHosts.exists(), "declined approval must not write known_hosts")
-        assertEquals(null, hostKeys.known("veryshiny.net", 2222))
     }
 
     @Test
@@ -94,15 +86,26 @@ class HostKeyGateTest {
 
     @Test
     fun `known host returns Trusted without scanning`() = runTest {
-        val tool = FakeSshTool().apply { scannedHostKeys = listOf(ed25519) }
-        val hostKeys = HostKeyStore(JsonStore(dir))
-        hostKeys.approve("veryshiny.net", 2222, "SHA256:ed25519fingerprint")
-        val g = HostKeyGate(tool, hostKeys, File(dir, "ssh/known_hosts"))
+        val tool = FakeSshTool().apply {
+            hostIsKnown = true
+            scannedHostKeys = listOf(ed25519)
+        }
+        val g = gate(tool)
 
         val outcome = g.ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
 
         assertEquals(HostKeyOutcome.Trusted, outcome)
         assertTrue(tool.scanCalls.isEmpty(), "a known host must not be scanned")
+    }
+
+    @Test
+    fun `trusted host is reported without scanning`() = runTest {
+        val tool = FakeSshTool().apply { hostIsKnown = true }
+        val knownHosts = File(dir, "ssh/known_hosts")
+        val outcome = HostKeyGate(tool, knownHosts).ensureTrusted("veryshiny.net", 2222, 300_000L) { true }
+        assertEquals(HostKeyOutcome.Trusted, outcome)
+        assertTrue(tool.scanCalls.isEmpty())
+        assertEquals(listOf(Triple("veryshiny.net", 2222, knownHosts)), tool.knownCalls)
     }
 
     @Test

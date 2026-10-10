@@ -32,11 +32,3 @@ data class SshKey(
     val publicKey: String,
     val encryptedPrivateBase64: String,
 )
-
-@Serializable
-data class KnownHost(
-    val host: String,
-    val port: Int,
-    val fingerprint: String,
-    val approvedAt: Long,
-)

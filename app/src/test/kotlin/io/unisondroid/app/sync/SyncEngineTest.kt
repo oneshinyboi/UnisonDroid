@@ -1,6 +1,5 @@
 package io.unisondroid.app.sync
 
-import io.unisondroid.app.data.HostKeyStore
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -18,7 +17,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -127,7 +125,8 @@ class SyncEngineTest {
 
         val finished = h.engine.state.value as SyncState.Finished
         assertEquals("prof1", finished.profileId)
-        assertEquals(SERVER_FINGERPRINT, h.hostKeys.known(HOST, SSH_PORT)?.fingerprint)
+        val knownHosts = File(sshHome, "known_hosts")
+        assertTrue(knownHosts.readText().contains(SERVER_KNOWN_HOSTS_LINE), "got:\n${knownHosts.readText()}")
         assertEquals(1, h.runner.starts.size)
     }
 
@@ -148,7 +147,7 @@ class SyncEngineTest {
         assertTrue(failed.detail.contains("host key", ignoreCase = true), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
         assertFalse(File(unisonDir, "prof1.prf").exists())
-        assertNull(h.hostKeys.known(HOST, SSH_PORT), "declined fingerprint must not be persisted")
+        assertFalse(File(sshHome, "known_hosts").exists(), "declined fingerprint must not be persisted")
     }
 
     @Test
@@ -168,7 +167,7 @@ class SyncEngineTest {
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncState.Reason.TUNNEL, failed.reason)
         assertTrue(failed.detail.contains("timed out", ignoreCase = true), "detail was: ${failed.detail}")
-        assertNull(h.hostKeys.known(HOST, SSH_PORT), "a timed-out decision must not persist a fingerprint")
+        assertFalse(File(sshHome, "known_hosts").exists(), "a timed-out decision must not persist a fingerprint")
         assertTrue(h.runner.starts.isEmpty())
     }
 
@@ -442,7 +441,7 @@ class SyncEngineTest {
         hostKeyDecisionTimeoutMs: Long = 300_000L,
         scannedHostKeys: List<HostKeyEntry> = listOf(
             HostKeyEntry(
-                knownHostsLine = "[$HOST]:$SSH_PORT ssh-ed25519 AAAAad-hoc",
+                knownHostsLine = SERVER_KNOWN_HOSTS_LINE,
                 keyType = "ssh-ed25519",
                 fingerprint = SERVER_FINGERPRINT,
             ),
@@ -454,21 +453,19 @@ class SyncEngineTest {
         val store = JsonStore(dataDir)
         val repo = ProfileRepository(store)
         val vault = KeyVault(store, IdentityCipher, FakeSshTool())
-        val hostKeys = HostKeyStore(store)
         val key = vault.generate("phone-key")
         val profiles = profileIds.associateWith { profile(it, key.id) }
         profiles.values.forEach { repo.save(it) }
-        if (knownFingerprint != null) {
-            hostKeys.approve(HOST, SSH_PORT, knownFingerprint)
-        }
         val events = mutableListOf<String>()
-        val sshTool = FakeSshTool().apply { this.scannedHostKeys = scannedHostKeys }
+        val sshTool = FakeSshTool().apply {
+            this.scannedHostKeys = scannedHostKeys
+            this.hostIsKnown = knownFingerprint != null
+        }
         val runner = FakeRunner(scripts, events, onStart)
         val engine = SyncEngine(
             binaryLocator = BinaryLocator(nativeDir),
             profiles = repo,
             keys = vault,
-            hostKeys = hostKeys,
             sshTool = sshTool,
             runnerFactory = { _ -> runner },
             parserFactory = { OutputParser() },
@@ -477,7 +474,7 @@ class SyncEngineTest {
             clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
             hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
         )
-        return Harness(engine, repo, vault, hostKeys, sshTool, runner, events, profiles, key.id)
+        return Harness(engine, repo, vault, sshTool, runner, events, profiles, key.id)
     }
 
     private fun profile(id: String, sshKeyId: String) = Profile(
@@ -496,7 +493,6 @@ class SyncEngineTest {
         val engine: SyncEngine,
         val repo: ProfileRepository,
         val vault: KeyVault,
-        val hostKeys: HostKeyStore,
         val sshTool: FakeSshTool,
         val runner: FakeRunner,
         val events: MutableList<String>,
@@ -551,6 +547,7 @@ class SyncEngineTest {
         const val SSH_PORT = 2222
         const val REMOTE_SOCKET_PORT = 22333
         val SERVER_FINGERPRINT = "SHA256:" + "A".repeat(43)
+        val SERVER_KNOWN_HOSTS_LINE = "[$HOST]:$SSH_PORT ssh-ed25519 AAAAad-hoc"
         val PROGRESS_LINE = "[wnt] ...  5/10 KiB  photos/vacation.jpg"
         val SUMMARY_LINE = "Synchronization complete at 21:33:33  (2 items transferred, 0 skipped, 0 failed)"
         val FAKE_BINARY = File("/nowhere/libunison.so")

@@ -1,6 +1,5 @@
 package io.unisondroid.app.sync
 
-import io.unisondroid.app.data.HostKeyStore
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.nio.file.Files
@@ -22,7 +21,6 @@ sealed interface HostKeyOutcome {
  */
 class HostKeyGate(
     private val tool: SshTool,
-    private val hostKeys: HostKeyStore,
     private val knownHostsFile: File,
 ) {
 
@@ -32,7 +30,7 @@ class HostKeyGate(
         decisionTimeoutMs: Long,
         prompt: suspend (fingerprint: String) -> Boolean,
     ): HostKeyOutcome {
-        if (hostKeys.known(host, port) != null) return HostKeyOutcome.Trusted
+        if (tool.isHostKnown(host, port, knownHostsFile)) return HostKeyOutcome.Trusted
 
         val entry = try {
             val scanned = tool.scanHostKeys(host, port)
@@ -48,7 +46,6 @@ class HostKeyGate(
             false -> HostKeyOutcome.Declined(entry.fingerprint)
             true -> {
                 appendKnownHost(entry.knownHostsLine)
-                hostKeys.approve(host, port, entry.fingerprint)
                 HostKeyOutcome.Trusted
             }
         }

@@ -6,7 +6,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import io.unisondroid.app.data.HostKeyStore
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -181,7 +180,6 @@ private class FakeSyncEngine : SyncEngine(
     BinaryLocator(File("/nonexistent/native-lib")),
     ProfileRepository(JsonStore(File("/nonexistent/data"))),
     KeyVault(JsonStore(File("/nonexistent/data")), IdentityCipher, FakeSshTool()),
-    HostKeyStore(JsonStore(File("/nonexistent/data"))),
     FakeSshTool(),
     { UnisonRunner(it) },
     { OutputParser() },
