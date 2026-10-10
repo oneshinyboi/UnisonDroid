@@ -107,3 +107,24 @@ adb install -r unisondroid-v0.1.0-app-release.apk
 
 Then create a profile pointing at a server running `unison -socket 22333` and
 run a sync. The About screen reports the bundled Unison version.
+
+## 6. Debug vs release builds
+
+Debug and release are two independent installs with different signatures, so
+both can be installed side by side on one device:
+
+| | Debug (local/dev) | Release (published) |
+| --- | --- | --- |
+| Application id | `io.unisondroid.app.dev` | `io.unisondroid.app` |
+| Launcher label | UnisonDroid Dev | UnisonDroid |
+| Version name | `<version>-dev` | `<version>` |
+| Signing | default debug keystore (`~/.android/debug.keystore`) | upload keystore via `KEYSTORE_PATH` |
+
+Debug builds are never signed with the release key. Because the application ids
+differ, installing a dev build cannot clobber a published release (or the
+reverse), and `./gradlew :app:connectedDebugAndroidTest` targets the `.dev`
+package. A release build without `KEYSTORE_PATH` set is produced unsigned.
+
+For an installable, release-signed build for local testing, run
+`./gradlew :app:assembleRelease` with the signing environment set (section 2)
+rather than re-signing a debug build.

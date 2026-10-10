@@ -15,6 +15,8 @@ android {
         versionCode = 6
         versionName = "0.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Debug builds override this to "UnisonDroid Dev" (see buildTypes.debug).
+        manifestPlaceholders["appLabel"] = "UnisonDroid"
     }
 
     signingConfigs {
@@ -36,9 +38,12 @@ android {
 
     buildTypes {
         debug {
-            if (System.getenv("KEYSTORE_PATH") != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // Dev builds are a separate install: their own application id, label and
+            // signature (the default debug keystore). Never sign debug with the release
+            // key — that is what caused release/dev signature collisions on-device.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders["appLabel"] = "UnisonDroid Dev"
         }
         release {
             isMinifyEnabled = false
