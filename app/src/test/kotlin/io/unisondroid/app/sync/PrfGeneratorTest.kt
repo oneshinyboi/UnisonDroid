@@ -30,11 +30,9 @@ class PrfGeneratorTest {
         advancedPrefs = advancedPrefs,
     )
 
-    private fun sshCommand(port: Int = 22) = SshCommand(
+    private fun sshCommand() = SshCommand(
         binary = File("/data/app/lib/arm64/libssh.so"),
-        keyFile = File("/data/data/io.unisondroid.app/no_backup/ssh/key-1"),
-        knownHosts = File("/data/data/io.unisondroid.app/no_backup/ssh/known_hosts"),
-        port = port,
+        configFile = File("/data/data/io.unisondroid.app/no_backup/ssh/ssh_config"),
     )
 
     @Test
@@ -46,14 +44,7 @@ class PrfGeneratorTest {
         assertEquals("root = ssh://diamond@server.example//srv/sync", lines[1])
         assertEquals("sshcmd = /data/app/lib/arm64/libssh.so", lines[2])
         assertEquals(
-            "sshargs = -F none" +
-                " -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
-                " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
-                " -o StrictHostKeyChecking=yes" +
-                " -o BatchMode=yes" +
-                " -o IdentitiesOnly=yes" +
-                " -o LogLevel=ERROR" +
-                " -p 22",
+            "sshargs = -F /data/data/io.unisondroid.app/no_backup/ssh/ssh_config",
             lines[3],
         )
         assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(4, 7))
@@ -86,10 +77,13 @@ class PrfGeneratorTest {
     }
 
     @Test
-    fun `non-default port appears only in the ssh line`() {
-        val out = PrfGenerator.generate(profile(sshPort = 2222), sshCommand(port = 2222))
+    fun `port never appears in the prf`() {
+        val out = PrfGenerator.generate(profile(sshPort = 2222), sshCommand())
 
-        assertTrue(out.contains(" -p 2222"), "got:\n$out")
+        assertFalse(
+            out.contains("2222"),
+            "the port now lives in the ssh_config, got:\n$out",
+        )
         assertFalse(
             out.contains(":2222"),
             "the port must not appear in the ssh:// root, got:\n$out",
@@ -123,10 +117,7 @@ class PrfGeneratorTest {
         val expected = "root = /storage/emulated/0/Documents\n" +
             "root = ssh://diamond@server.example//srv/sync\n" +
             "sshcmd = /data/app/lib/arm64/libssh.so\n" +
-            "sshargs = -F none -i /data/data/io.unisondroid.app/no_backup/ssh/key-1" +
-            " -o UserKnownHostsFile=/data/data/io.unisondroid.app/no_backup/ssh/known_hosts" +
-            " -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes" +
-            " -o LogLevel=ERROR -p 22\n" +
+            "sshargs = -F /data/data/io.unisondroid.app/no_backup/ssh/ssh_config\n" +
             "perms = 0\n" +
             "links = false\n" +
             "fat = true\n"

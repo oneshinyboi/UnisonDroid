@@ -99,8 +99,12 @@ class SyncEngineTest {
         assertEquals(prf, prfAtRunnerStart)
         assertTrue(prf.contains("root = /storage/emulated/0/Sync"), "got:\n$prf")
         assertTrue(prf.contains("root = ssh://syncuser@$HOST//srv/sync"), "got:\n$prf")
-        assertTrue(prf.contains(" -p $SSH_PORT"), "got:\n$prf")
+        val sshargs = prf.lines().first { it.startsWith("sshargs = ") }
+        assertTrue(sshargs.startsWith("sshargs = -F "), "got:\n$prf")
         assertTrue(prf.contains("perms = 0"))
+
+        val config = File(sshHome, "ssh_config").readText()
+        assertTrue(config.contains("Port $SSH_PORT"), "got:\n$config")
 
         val (env, args) = h.runner.starts.single()
         assertEquals(mapOf("UNISON" to unisonDir.absolutePath), env)

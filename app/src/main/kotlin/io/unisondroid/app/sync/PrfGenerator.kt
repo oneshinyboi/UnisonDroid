@@ -5,9 +5,7 @@ import java.io.File
 
 data class SshCommand(
     val binary: File,
-    val keyFile: File,
-    val knownHosts: File,
-    val port: Int,
+    val configFile: File,
 )
 
 object PrfGenerator {
@@ -18,15 +16,7 @@ object PrfGenerator {
         sb.append("root = ssh://").append(profile.user).append('@').append(profile.host)
             .append('/').append(profile.remoteRoot).append('\n')
         sb.append("sshcmd = ").append(ssh.binary.absolutePath).append('\n')
-        sb.append("sshargs = -F none")
-            .append(" -i ").append(ssh.keyFile.absolutePath)
-            .append(" -o UserKnownHostsFile=").append(ssh.knownHosts.absolutePath)
-            .append(" -o StrictHostKeyChecking=yes")
-            .append(" -o BatchMode=yes")
-            .append(" -o IdentitiesOnly=yes")
-            .append(" -o LogLevel=ERROR")
-            .append(" -p ").append(ssh.port)
-            .append('\n')
+        sb.append("sshargs = -F ").append(ssh.configFile.absolutePath).append('\n')
         sb.append("perms = 0\n")
         sb.append("links = false\n")
         sb.append("fat = true\n")

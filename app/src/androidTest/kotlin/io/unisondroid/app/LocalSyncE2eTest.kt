@@ -209,9 +209,7 @@ class LocalSyncE2eTest {
             profile,
             SshCommand(
                 binary = File("/nonexistent/libssh.so"),
-                keyFile = File("/nonexistent/key"),
-                knownHosts = File("/nonexistent/known_hosts"),
-                port = 22,
+                configFile = File("/nonexistent/ssh_config"),
             ),
         )
         // Replace the ssh root line with the second local root, to test a

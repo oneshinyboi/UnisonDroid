@@ -162,12 +162,9 @@ open class SyncEngine(
             val key = writePrivateKey(p)
             keyFile = key
             unisonDir.mkdirs()
-            val sshCommand = SshCommand(
-                binary = sshBinary,
-                keyFile = key,
-                knownHosts = knownHosts,
-                port = p.sshPort,
-            )
+            val configFile = File(sshHome, "ssh_config")
+            configFile.writeText(SshConfig.render(key, knownHosts, p.sshPort))
+            val sshCommand = SshCommand(binary = sshBinary, configFile = configFile)
             File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand))
 
             val proc = runnerFactory(binary).start(
