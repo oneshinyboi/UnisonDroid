@@ -245,6 +245,34 @@ class LocalSyncE2eTest {
         )
     }
 
+    @Test
+    fun localSync_worksWithEveryBundledUnisonVersion() {
+        val nativeDir = File(
+            InstrumentationRegistry.getInstrumentation().targetContext.applicationInfo.nativeLibraryDir,
+        )
+        UnisonInfo.BUNDLED.forEach { bundled ->
+            val status = BinaryLocator(nativeDir).locate(bundled.fileName)
+            assertTrue("${bundled.fileName} must be present", status is BinaryStatus.Available)
+            val binary = (status as BinaryStatus.Available).path
+
+            val base = newBaseDir()
+            val rootA = File(base, "a").apply { mkdirs() }
+            val rootB = File(base, "b").apply { mkdirs() }
+            val profileDir = File(base, "unison").apply { mkdirs() }
+            writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
+            File(rootA, "hello.txt").writeText("hello ${bundled.version}")
+
+            val run = runUnison(binary, profileDir)
+            assertEquals("${bundled.version} sync failed:\n${run.output}", 0, run.exit)
+            val summary = parseSummary(run.output)
+            assertTrue(
+                "${bundled.version} must transfer the new file; got:\n${run.output}",
+                summary.transferred >= 1,
+            )
+            assertEquals("hello ${bundled.version}", File(rootB, "hello.txt").readText())
+        }
+    }
+
     private fun locateBinary(): File {
         val nativeDir = File(InstrumentationRegistry.getInstrumentation().targetContext.applicationInfo.nativeLibraryDir)
         val status = BinaryLocator(nativeDir).locate(UnisonInfo.DEFAULT.fileName)

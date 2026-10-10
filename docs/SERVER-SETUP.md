@@ -12,9 +12,14 @@ Alternatively, a profile can be set to connect to a long-running
 ## 1. Install Unison and an SSH server
 
 Install `unison` and an OpenSSH server with your distribution's package
-manager. The `unison` version must match the version embedded in the
-UnisonDroid build (`dev` in development builds, or the pinned release version
-shown on the About screen).
+manager. Unison requires the client and server to run the same protocol
+version. UnisonDroid bundles two binaries and each profile picks one, so match
+the server's Unison version to the closest bundled one:
+
+| Server's Unison | Choose in the profile |
+| --------------- | --------------------- |
+| 2.52 or newer   | **2.54.0**            |
+| 2.51.x          | **2.53.8**            |
 
 ```sh
 # Debian / Ubuntu

@@ -5,8 +5,10 @@ synchronization, syncing files between the device and remote hosts over SSH.
 
 ## Status
 
-Functional for manual, one-tap sync to a Unison 2.53.x server. Distributed as
-signed APKs on GitHub Releases, with F-Droid inclusion pending.
+Functional for manual, one-tap sync to a Unison server. The app bundles both
+Unison **2.54.0** and **2.53.8** binaries and each profile chooses which one to
+run, so the same APK can sync with 2.52+ and older 2.51.x servers. Distributed
+as signed APKs on GitHub Releases, with F-Droid inclusion pending.
 
 ## Building from source
 
@@ -19,14 +21,17 @@ Requirements:
 - A Linux host with OCaml build prerequisites (`gcc`, `make`, `curl`, `git`) to
   cross-compile Unison, and `perl` for the OpenSSL/OpenSSH build
 
-The app embeds a cross-compiled `unison` binary plus the OpenSSH client tools
-in `app/src/main/jniLibs/<abi>/` (`libunison.so`, `libssh.so`,
-`libssh-keygen.so`, `libssh-keyscan.so`). That directory is gitignored, so a
-clean checkout has to build it first:
+The app embeds cross-compiled `unison` binaries plus the OpenSSH client tools
+in `app/src/main/jniLibs/<abi>/` (`libunison_2_54_0.so`,
+`libunison_2_53_8.so`, `libssh.so`, `libssh-keygen.so`, `libssh-keyscan.so`).
+That directory is gitignored, so a clean checkout has to build it first:
 
 ```sh
-native/build-unison.sh arm64-v8a
-native/build-unison.sh x86_64
+# Build every bundled version (see native/unison-versions.txt) for both ABIs.
+for v in $(grep -v '^#' native/unison-versions.txt); do
+  UNISON_VERSION="$v" native/build-unison.sh arm64-v8a
+  UNISON_VERSION="$v" native/build-unison.sh x86_64
+done
 native/build-openssh.sh arm64-v8a
 native/build-openssh.sh x86_64
 ```
