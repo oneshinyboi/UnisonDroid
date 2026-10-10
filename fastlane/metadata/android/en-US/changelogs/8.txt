@@ -1,0 +1,9 @@
+Choose your Unison version.
+
+- The app now bundles Unison 2.54.0 and 2.53.8, and each profile can pick
+  which one to run (default: 2.54.0).
+- If a sync fails because the server runs a different Unison version, the
+  run screen offers a one-tap retry with the other bundled version.
+- 2.54.0 works with 2.52.0 and newer servers; 2.53.8 also reaches 2.51.x
+  servers through its compatibility mode.
+- The About screen lists the bundled versions.
