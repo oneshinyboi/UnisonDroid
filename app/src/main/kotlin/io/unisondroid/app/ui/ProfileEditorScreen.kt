@@ -248,6 +248,7 @@ internal fun ProfileEditorContent(
                 autoSyncIntervalMinutes = intervalMinutes,
                 lastSyncedAt = initial?.lastSyncedAt,
                 lastResult = initial?.lastResult,
+                lastConflicts = initial?.lastConflicts.orEmpty(),
             ),
         )
     }

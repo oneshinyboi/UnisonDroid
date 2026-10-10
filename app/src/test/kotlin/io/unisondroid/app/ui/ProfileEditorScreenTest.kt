@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.ConflictPolicy
+import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -346,6 +347,32 @@ class ProfileEditorScreenTest {
         compose.onNodeWithText("Prefer older requires syncing file times.").assertExists()
     }
 
+    @Test
+    fun `editing a profile preserves its stored conflicts`() {
+        val conflicts = listOf(ConflictRecord("a.txt", "conflicting updates"))
+        runBlocking { repository.save(seedProfile(lastConflicts = conflicts)) }
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = "p1", onSaved = {})
+            }
+        }
+        awaitEditor()
+
+        compose.onNodeWithTag(FIELD_CONFLICT_POLICY).performScrollTo().performClick()
+        compose.onNodeWithText("Keep both copies").performClick()
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        compose.waitUntil(5_000) {
+            runBlocking { repository.get("p1")?.conflictPolicy == ConflictPolicy.KEEP_BOTH }
+        }
+        assertEquals(
+            "editing must not wipe stored conflict records",
+            conflicts,
+            runBlocking { repository.get("p1")!!.lastConflicts },
+        )
+    }
+
     private fun fillRequired() {
         compose.onNodeWithTag(FIELD_NAME).performScrollTo().performTextInput("Phone")
         compose.onNodeWithTag(FIELD_LOCAL_ROOT).performScrollTo().performTextInput("/storage/emulated/0/Unison")
@@ -371,6 +398,7 @@ class ProfileEditorScreenTest {
         autoSyncEnabled: Boolean = false,
         autoSyncIntervalMinutes: Int = 60,
         conflictPolicy: ConflictPolicy = ConflictPolicy.SKIP,
+        lastConflicts: List<ConflictRecord> = emptyList(),
     ): Profile = Profile(
         id = "p1",
         name = "Phone",
@@ -382,6 +410,7 @@ class ProfileEditorScreenTest {
         autoSyncEnabled = autoSyncEnabled,
         autoSyncIntervalMinutes = autoSyncIntervalMinutes,
         conflictPolicy = conflictPolicy,
+        lastConflicts = lastConflicts,
     )
 
     private object XorCipher : KeyCipher {
