@@ -142,6 +142,7 @@ object ServiceLocator {
             unisonDir = File(context.noBackupFilesDir, "unison"),
             sshHome = File(context.noBackupFilesDir, "ssh"),
             clock = Clock.systemUTC(),
+            removableVolume = { path -> RemovableVolumes.isRemovable(context, path) },
         )
     }
 }

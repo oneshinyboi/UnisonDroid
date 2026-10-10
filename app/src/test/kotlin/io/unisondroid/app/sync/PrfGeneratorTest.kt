@@ -50,7 +50,44 @@ class PrfGeneratorTest {
             "sshargs = -F /data/data/io.unisondroid.app/no_backup/ssh/ssh_config",
             lines[3],
         )
-        assertEquals(listOf("perms = 0", "links = false", "fat = true"), lines.subList(4, 7))
+        assertEquals(
+            listOf("perms = 0", "links = false", "fat = true", "ignorecase = false"),
+            lines.subList(4, 8),
+        )
+    }
+
+    @Test
+    fun `ignorecase false follows fat to keep internal storage case sensitive`() {
+        val lines = PrfGenerator.generate(profile(), sshCommand()).lines()
+
+        // `fat = true` implies ignorecase = true; the explicit line after it
+        // overrides that so case-sensitive storage (ext4/f2fs) stays in
+        // case-sensitive mode. Order matters: the override must come after.
+        val fat = lines.indexOf("fat = true")
+        assertEquals(fat + 1, lines.indexOf("ignorecase = false"), "got:\n${lines.joinToString("\n")}")
+    }
+
+    @Test
+    fun `removable root turns ignorecase on after fat`() {
+        val lines = PrfGenerator.generate(profile(), sshCommand(), caseInsensitive = true).lines()
+
+        val fat = lines.indexOf("fat = true")
+        assertEquals(fat + 1, lines.indexOf("ignorecase = true"), "got:\n${lines.joinToString("\n")}")
+        assertTrue(
+            lines.none { it == "ignorecase = false" },
+            "a removable root must not also emit ignorecase = false; got:\n${lines.joinToString("\n")}",
+        )
+    }
+
+    @Test
+    fun `advanced prefs can restore case-insensitivity`() {
+        val out = PrfGenerator.generate(profile(advancedPrefs = "ignorecase = true\n"), sshCommand())
+        val lines = out.lines()
+
+        val defaultIndex = lines.indexOf("ignorecase = false")
+        val advancedIndex = lines.indexOf("ignorecase = true")
+        assertTrue(defaultIndex >= 0, "default ignorecase=false missing; got:\n$out")
+        assertTrue(defaultIndex < advancedIndex, "advanced prefs must be able to override the default; got:\n$out")
     }
 
     @Test
@@ -123,7 +160,8 @@ class PrfGeneratorTest {
             "sshargs = -F /data/data/io.unisondroid.app/no_backup/ssh/ssh_config\n" +
             "perms = 0\n" +
             "links = false\n" +
-            "fat = true\n"
+            "fat = true\n" +
+            "ignorecase = false\n"
 
         assertEquals(expected, PrfGenerator.generate(profile(), sshCommand()))
     }

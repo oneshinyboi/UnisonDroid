@@ -11,7 +11,12 @@ data class SshCommand(
 
 object PrfGenerator {
 
-    fun generate(profile: Profile, ssh: SshCommand, extraPrefs: List<String> = emptyList()): String {
+    fun generate(
+        profile: Profile,
+        ssh: SshCommand,
+        extraPrefs: List<String> = emptyList(),
+        caseInsensitive: Boolean = false,
+    ): String {
         val sb = StringBuilder()
         sb.append("root = ").append(profile.localRoot).append('\n')
         sb.append("root = ").append(sshRoot(profile)).append('\n')
@@ -19,7 +24,15 @@ object PrfGenerator {
         sb.append("sshargs = -F ").append(ssh.configFile.absolutePath).append('\n')
         sb.append("perms = 0\n")
         sb.append("links = false\n")
+        // `fat = true` implies `ignorecase = true`. That is correct for a
+        // removable volume (typically FAT/exFAT), but Android's internal
+        // storage (ext4/f2fs) is case sensitive: left case-insensitive, Unison
+        // aborts when two names differ only in case ("...cannot be synchronized
+        // to a file system being treated as case-insensitive"). Emit the case
+        // mode explicitly, after `fat`, so it overrides the implied default.
+        // Advanced prefs are appended later and can still override this.
         sb.append("fat = true\n")
+        sb.append("ignorecase = ").append(caseInsensitive).append('\n')
         if (profile.serverCommand.isNotEmpty() && profile.serverCommand != DEFAULT_SERVER_COMMAND) {
             sb.append("servercmd = ").append(profile.serverCommand).append('\n')
         }

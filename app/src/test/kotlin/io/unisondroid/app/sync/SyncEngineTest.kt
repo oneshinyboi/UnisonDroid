@@ -119,6 +119,29 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `removable local root makes the generated profile case insensitive`() = runTest {
+        val asked = mutableListOf<String>()
+        var prfAtRunnerStart: String? = null
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            removableVolume = { path ->
+                asked += path
+                true
+            },
+            onStart = { _, _ -> prfAtRunnerStart = File(unisonDir, "prof1.prf").readText() },
+        )
+
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        withTimeout(10_000) { job.join() }
+
+        assertTrue(h.engine.state.value is SyncState.Finished)
+        assertEquals(listOf("/storage/emulated/0/Sync"), asked, "the detector must be asked about the local root")
+        val prf = prfAtRunnerStart ?: error("prf was not written")
+        assertTrue(prf.contains("ignorecase = true"), "got:\n$prf")
+        assertFalse(prf.contains("ignorecase = false"), "got:\n$prf")
+    }
+
+    @Test
     fun `unknown host key pauses for decision and approval resumes sync`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
@@ -793,6 +816,7 @@ class SyncEngineTest {
         binaryAvailable: Boolean = true,
         sshBinaryAvailable: Boolean = true,
         hostKeyDecisionTimeoutMs: Long = 300_000L,
+        removableVolume: (String) -> Boolean = { false },
         scannedHostKeys: List<HostKeyEntry> = listOf(
             HostKeyEntry(
                 knownHostsLine = SERVER_KNOWN_HOSTS_LINE,
@@ -827,6 +851,7 @@ class SyncEngineTest {
             sshHome = sshHome,
             clock = Clock.fixed(Instant.ofEpochMilli(FIXED_NOW_MILLIS), ZoneOffset.UTC),
             hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
+            removableVolume = removableVolume,
         )
         return Harness(engine, repo, vault, sshTool, runner, events, profiles, key.id)
     }

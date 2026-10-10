@@ -61,6 +61,10 @@ open class SyncEngine(
     private val sshHome: File,
     private val clock: Clock,
     private val hostKeyDecisionTimeoutMs: Long = HOST_KEY_DECISION_TIMEOUT_MS,
+    // Reports whether the local root lives on a removable volume (SD card),
+    // which is normally case-insensitive FAT/exFAT. Injected so the engine
+    // stays Android-free and tests can stub it.
+    private val removableVolume: (String) -> Boolean = { false },
 ) {
     private val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
@@ -213,7 +217,9 @@ open class SyncEngine(
             val configFile = File(sshHome, "ssh_config")
             writeAtomically(configFile, SshConfig.render(key, knownHosts, p.sshPort))
             val sshCommand = SshCommand(binary = sshBinary, configFile = configFile)
-            File(unisonDir, "${p.id}.prf").writeText(PrfGenerator.generate(p, sshCommand, extraPrefs))
+            val caseInsensitive = removableVolume(p.localRoot)
+            File(unisonDir, "${p.id}.prf")
+                .writeText(PrfGenerator.generate(p, sshCommand, extraPrefs, caseInsensitive))
 
             val proc = runnerFactory(binary).start(
                 env = mapOf("UNISON" to unisonDir.absolutePath),
