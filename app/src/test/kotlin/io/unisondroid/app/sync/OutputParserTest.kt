@@ -264,4 +264,28 @@ class OutputParserTest {
     fun `failed lines and zero-transfer complete summary finalize counts`() {
         assertEquals(SyncSummary(transferred = 0, failed = 2, conflicts = 0), feedFinalize("failures.txt"))
     }
+
+    @Test
+    fun `duplicate failure forms for the same path count once via summary`() {
+        assertEquals(1, feedFinalize("failed-dedup.txt").failed)
+    }
+
+    @Test
+    fun `without a summary duplicate failure paths are deduped`() {
+        val (parser, _) = feedAll(
+            "Failed [notes/plan.txt]: Input/output error\n" +
+                "  failed: notes/plan.txt\n",
+        )
+
+        assertEquals(1, parser.finalize(1).failed)
+    }
+
+    @Test
+    fun `partially transferred segment in summary is tolerated`() {
+        val (parser, _) = feedAll(
+            "Synchronization incomplete at 21:33:33  (2 items transferred, 1 partially transferred, 3 skipped, 4 failed)\n",
+        )
+
+        assertEquals(SyncSummary(transferred = 2, failed = 4, conflicts = 0), parser.finalize(1))
+    }
 }

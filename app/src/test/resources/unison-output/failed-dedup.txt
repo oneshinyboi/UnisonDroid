@@ -1,0 +1,3 @@
+Failed [notes/plan.txt]: Input/output error
+  failed: notes/plan.txt
+Synchronization complete at 21:33:33  (0 items transferred, 0 skipped, 1 failed)

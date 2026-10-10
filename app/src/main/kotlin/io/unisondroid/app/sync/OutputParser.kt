@@ -35,9 +35,11 @@ class OutputParser {
     private val pending = StringBuilder()
     private var swallowLeadingLf = false
     private var conflicts = 0
-    private var failed = 0
+    private val failedPaths = mutableSetOf<String>()
+    private var failedWithoutPath = 0
     private var lastProgressCount = 0
     private var transferredFromSummary: Int? = null
+    private var failedFromSummary: Int? = null
 
     fun feed(chunk: String): List<SyncEvent> {
         if (chunk.isEmpty()) return emptyList()
@@ -70,7 +72,10 @@ class OutputParser {
         }
         return SyncSummary(
             transferred = transferredFromSummary ?: lastProgressCount,
-            failed = failed,
+            // Real unison prints both "Failed [path]: msg" and "  failed: path" for the
+            // same transient failure, so prefer the summary's own count and otherwise
+            // dedupe by path. Error lines carry no path and count individually.
+            failed = failedFromSummary ?: (failedPaths.size + failedWithoutPath),
             conflicts = conflicts,
         )
     }
@@ -88,7 +93,10 @@ class OutputParser {
         if (isKnownUnisonMismatch(line)) return listOf(SyncEvent.VersionMismatch(line))
 
         if (line.startsWith(SUMMARY_PREFIX)) {
-            SUMMARY.find(line)?.let { transferredFromSummary = it.groupValues[1].toInt() }
+            SUMMARY.find(line)?.let { match ->
+                transferredFromSummary = match.groupValues[1].toInt()
+                failedFromSummary = match.groupValues[4].toInt()
+            }
             return listOf(SyncEvent.Completed)
         }
 
@@ -109,12 +117,12 @@ class OutputParser {
         }
 
         FAILED_FILE.find(line)?.let { match ->
-            failed++
+            failedPaths += match.groupValues[1].trim()
             return listOf(SyncEvent.FailedItem(path = match.groupValues[1].trim(), message = ""))
         }
 
         FAILED_ITEM.find(line)?.let { match ->
-            failed++
+            failedPaths += match.groupValues[1].trim()
             return listOf(
                 SyncEvent.FailedItem(
                     path = match.groupValues[1].trim(),
@@ -124,7 +132,7 @@ class OutputParser {
         }
 
         if (line.startsWith(ERROR_PREFIX)) {
-            failed++
+            failedWithoutPath++
             return listOf(SyncEvent.FailedItem(path = "", message = line.substringAfter(ERROR_PREFIX).trim()))
         }
 
@@ -146,9 +154,11 @@ class OutputParser {
         private val PROGRESS = Regex("""^\s*(\d{1,3})%\s+(\d+)/(\d+)\s+\(([^)]*) of ([^)]*)\)\s+.*ETA\s*$""")
 
         // Anchored on "Synchronization" so the earlier "N items will be synced, M skipped"
-        // line is ignored. Matches both the complete and incomplete terminators.
+        // line is ignored. Matches both the complete and incomplete terminators; the
+        // "P partially transferred, " segment is optional in real output. Captures:
+        // 1 = transferred, 2 = partially transferred (optional), 3 = skipped, 4 = failed.
         private val SUMMARY =
-            Regex("""Synchronization (?:complete|incomplete) at \d{2}:\d{2}:\d{2}\s+\((\d+) items? transferred, (\d+) skipped, (\d+) failed.*\)""")
+            Regex("""Synchronization (?:complete|incomplete) at \d{2}:\d{2}:\d{2}\s+\((\d+) items? transferred, (?:(\d+) partially transferred, )?(\d+) skipped, (\d+) failed.*\)""")
 
         private val SKIP = Regex("""^\s*skipped:\s+(.*?)\s+\((.*)\)\s*$""")
 
