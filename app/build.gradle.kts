@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.tink.android)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(platform(libs.androidx.compose.bom))
@@ -105,6 +106,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.work.testing)
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 

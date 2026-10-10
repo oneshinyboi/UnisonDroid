@@ -6,12 +6,13 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.service.ServiceLocator
-import io.unisondroid.app.service.SyncService
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.sync.OutputParser
@@ -27,7 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -35,7 +36,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -53,6 +53,7 @@ class RunScreenTest {
 
     @Before
     fun setUp() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(RuntimeEnvironment.getApplication())
         ServiceLocator.reset()
         engine = FakeSyncEngine()
         ServiceLocator.engineProvider = { engine }
@@ -120,15 +121,17 @@ class RunScreenTest {
     }
 
     @Test
-    fun `starts the sync service with the profile intent on entry`() {
+    fun `enqueues the one-shot unique sync on entry`() {
         compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p42") } }
         compose.waitForIdle()
 
-        val application = RuntimeEnvironment.getApplication()
-        val started = shadowOf(application).nextStartedService
-        assertNotNull("service must be started on entry", started)
-        assertEquals(SyncService::class.java.name, started!!.component?.className)
-        assertEquals("p42", started.getStringExtra("profileId"))
+        val context = RuntimeEnvironment.getApplication()
+        val infos = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork("sync-p42-now")
+            .get()
+        assertTrue("RunScreen must enqueue the one-shot sync", infos.isNotEmpty())
+        assertEquals(1, infos.size)
+        assertNull("manual sync must be one-shot", infos.first().periodicityInfo)
     }
 
     @Test

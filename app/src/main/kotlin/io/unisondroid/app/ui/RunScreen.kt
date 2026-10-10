@@ -37,7 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.unisondroid.app.service.ServiceLocator
-import io.unisondroid.app.service.SyncService
+import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.sync.SyncState
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -58,7 +58,7 @@ fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
     val state by engine.state.collectAsState()
 
     LaunchedEffect(profileId) {
-        ContextCompat.startForegroundService(context, SyncService.intent(context, profileId))
+        SyncScheduler(context).syncNow(profileId)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
