@@ -29,7 +29,7 @@ object SshConfig {
      * it a single token.
      */
     private fun configValue(value: String): String =
-        if (value.none { it.isWhitespace() || it == '"' || it == '\\' }) {
+        if (value.none { it.isWhitespace() || it == '"' || it == '\'' || it == '\\' }) {
             value
         } else {
             "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""

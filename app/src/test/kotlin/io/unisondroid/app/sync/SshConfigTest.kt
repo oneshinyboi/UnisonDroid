@@ -1,6 +1,7 @@
 package io.unisondroid.app.sync
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
 
@@ -21,5 +22,12 @@ class SshConfigTest {
                 "  Port 2222\n",
             out,
         )
+    }
+
+    @Test
+    fun `render quotes values containing whitespace or a single quote`() {
+        val out = SshConfig.render(File("/a b/ke'y"), File("/plain"), 22)
+
+        assertTrue(out.contains("IdentityFile \"/a b/ke'y\""), out)
     }
 }

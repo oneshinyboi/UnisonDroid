@@ -1,6 +1,7 @@
 package io.unisondroid.app.service
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -45,9 +46,11 @@ class SyncScheduler(private val context: Context) {
 
         // Make reconcile authoritative: cancel any auto-sync work whose profile is no
         // longer enabled or no longer exists. This does not rely on every removal path
-        // remembering to call cancel().
+        // remembering to call cancel(). Work enqueued by a version that predates
+        // AUTO_SYNC_TAG is not swept (it was cancelled on delete by that version).
         withContext(Dispatchers.IO) {
             val existing = runCatching { workManager.getWorkInfosByTag(AUTO_SYNC_TAG).get() }
+                .onFailure { Log.w(TAG, "auto-sync sweep query failed; orphaned work may remain", it) }
                 .getOrDefault(emptyList())
             existing.forEach { info ->
                 val id = info.tags.firstNotNullOfOrNull { tag ->
@@ -90,6 +93,8 @@ class SyncScheduler(private val context: Context) {
 
     companion object {
         const val MIN_INTERVAL_MINUTES = 15
+
+        private const val TAG = "SyncScheduler"
 
         /** Tags every periodic auto-sync request and, per profile, its owning profile id. */
         const val AUTO_SYNC_TAG = "auto-sync"
