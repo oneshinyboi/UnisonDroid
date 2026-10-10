@@ -37,6 +37,7 @@ import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.SideInfo
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.sync.Resolution
+import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -46,6 +47,8 @@ import kotlin.math.roundToInt
 
 const val RESOLVE_ROW_PREFIX = "resolve-row-"
 const val RESOLVE_SYNC_TAG = "resolve-sync"
+const val RESOLVE_BUSY_TAG = "resolve-busy"
+const val RESOLVE_FAILURE_TAG = "resolve-failure"
 const val RESOLVE_KEEP_LOCAL = "resolve-keepLocal"
 const val RESOLVE_KEEP_REMOTE = "resolve-keepRemote"
 const val RESOLVE_KEEP_BOTH = "resolve-keepBoth"
@@ -83,23 +86,29 @@ fun ResolveConflictsScreen(
 
     var decisions by remember { mutableStateOf<Map<String, Resolution>>(emptyMap()) }
     var running by remember { mutableStateOf(false) }
+    var outcome by remember { mutableStateOf<SyncOutcome?>(null) }
 
     ResolveConflictsContent(
         profile = profile,
         state = state,
         running = running,
+        outcome = outcome,
         decisions = decisions,
         onDecision = { path, resolution -> decisions = decisions + (path to resolution) },
         onSync = {
             val current = decisions
             running = true
+            outcome = null
             scope.launch {
-                // The engine re-parses the fresh output and rewrites lastConflicts, so
-                // reloading the profile drops paths that were resolved and keeps the rest.
-                engine.resolveConflicts(profileId, current)
-                decisions = emptyMap()
-                running = false
-                refresh++
+                try {
+                    // The engine re-parses the fresh output and rewrites lastConflicts, so
+                    // reloading the profile drops paths that were resolved and keeps the rest.
+                    outcome = engine.resolveConflicts(profileId, current)
+                    decisions = emptyMap()
+                    refresh++
+                } finally {
+                    running = false
+                }
             }
         },
         onDone = onDone,
@@ -114,6 +123,7 @@ internal fun ResolveConflictsContent(
     profile: Profile?,
     state: SyncState,
     running: Boolean,
+    outcome: SyncOutcome?,
     decisions: Map<String, Resolution>,
     onDecision: (String, Resolution) -> Unit,
     onSync: () -> Unit,
@@ -157,6 +167,18 @@ internal fun ResolveConflictsContent(
             }
 
             if (running) ResolveProgress(state)
+
+            if (!running && outcome != null) {
+                when {
+                    outcome == SyncOutcome.BUSY -> Text(
+                        text = "A sync is already running. Try again when it finishes.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag(RESOLVE_BUSY_TAG),
+                    )
+                    state is SyncState.Failed -> ResolveFailure(state)
+                }
+            }
 
             if (conflicts.isNotEmpty()) {
                 Button(
@@ -253,4 +275,14 @@ private fun ResolveProgress(state: SyncState) {
             else -> Text(text = "Working…")
         }
     }
+}
+
+@Composable
+private fun ResolveFailure(state: SyncState.Failed) {
+    Text(
+        text = "Could not resolve conflicts (${state.reason.name}): ${state.detail}",
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.testTag(RESOLVE_FAILURE_TAG),
+    )
 }

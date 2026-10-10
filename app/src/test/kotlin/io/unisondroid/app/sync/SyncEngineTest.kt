@@ -552,6 +552,53 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `exit-two partial transfer run finishes WARNINGS not OK`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "  partially transferred: docs/report.pdf",
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 1 partially transferred, 0 skipped, 0 failed)",
+                    ),
+                    exit = 2,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertEquals(
+            listOf(FailedRecord("docs/report.pdf", "partially transferred")),
+            finished.summary.failed,
+            "the partially transferred path must be captured, not silently dropped",
+        )
+        assertEquals(SyncResult.WARNINGS, h.repo.get("prof1")?.lastResult)
+        assertTrue(h.repo.get("prof1")?.lastConflicts.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `exit-two run with no parsed failures finishes WARNINGS not OK`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 0 skipped, 0 failed)",
+                    ),
+                    exit = 2,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertTrue(finished.summary.failed.isEmpty())
+        assertTrue(finished.summary.conflicts.isEmpty())
+        assertEquals(SyncResult.WARNINGS, h.repo.get("prof1")?.lastResult)
+    }
+
+    @Test
     fun `a failing run keeps the previous lastConflicts`() = runTest {
         val h = harness(
             scripts = listOf(

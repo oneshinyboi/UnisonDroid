@@ -284,9 +284,16 @@ open class SyncEngine(
                     return SyncOutcome.FAILED
                 }
                 else -> {
+                    // A completed run (exit 0-2, no fatal marker) is never OK when
+                    // the process reported a non-zero exit: it at least warned. A
+                    // partial transfer is surfaced in `failed` for display but is not
+                    // a hard failure — Unison folds `anyPartial` into the exit-1
+                    // (skippy) path — so it classifies as WARNINGS, not FAILED.
+                    val hasHardFailure = summary.failed.any { it.message != PARTIAL_TRANSFER_MESSAGE }
                     val result = when {
-                        summary.failed.isNotEmpty() -> SyncResult.FAILED
+                        hasHardFailure -> SyncResult.FAILED
                         summary.conflicts.isNotEmpty() -> SyncResult.WARNINGS
+                        summary.failed.isNotEmpty() || exit != 0 -> SyncResult.WARNINGS
                         else -> SyncResult.OK
                     }
                     profiles.save(

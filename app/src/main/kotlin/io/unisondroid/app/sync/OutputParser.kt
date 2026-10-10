@@ -38,6 +38,13 @@ val CONFLICT_REASONS = setOf(
     "skip requested",
 )
 
+/**
+ * Message recorded on a [FailedRecord] for a file Unison only partially transferred.
+ * Such a run exits 1 (`anyPartial` feeds `skippyExit`), so the engine treats it as a
+ * warning rather than a hard failure.
+ */
+internal const val PARTIAL_TRANSFER_MESSAGE = "partially transferred"
+
 class OutputParser {
 
     private val pending = StringBuilder()
@@ -130,6 +137,14 @@ class OutputParser {
                 reason = reason,
                 resolvable = reason in CONFLICT_REASONS,
             )
+            return emptyList()
+        }
+
+        // A partially transferred file is not a conflict, but it means the run did
+        // not fully complete. Surface it as a failure record (deduped by path) so it
+        // is not silently dropped; the engine classifies the run as a warning.
+        PARTIALLY_TRANSFERRED.find(line)?.let { match ->
+            recordFailure(path = match.groupValues[1].trim(), message = PARTIAL_TRANSFER_MESSAGE)
             return emptyList()
         }
 
@@ -250,7 +265,10 @@ class OutputParser {
         private val SUMMARY =
             Regex("""Synchronization (?:complete|incomplete) at \d{2}:\d{2}:\d{2}\s+\((\d+) items? transferred, (?:(\d+) partially transferred, )?(\d+) skipped, (\d+) failed.*\)""")
 
-        private val SKIP = Regex("""^\s*skipped:\s+(.*?)\s+\((.*)\)\s*$""")
+        private val SKIP = Regex("""^\s*skipped:\s+(.*)\s+\((.*)\)\s*$""")
+
+        // Unison prints one of these per file it could not fully transfer.
+        private val PARTIALLY_TRANSFERRED = Regex("""^\s*partially transferred:\s+(.*)$""")
 
         // `displayri` recon line: two fixed 8-char replica columns, a 5-char action,
         // then the full relative path (`uitext.ml:419`).

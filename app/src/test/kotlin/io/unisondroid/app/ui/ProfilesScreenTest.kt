@@ -186,13 +186,14 @@ class ProfilesScreenTest {
     }
 
     @Test
-    fun `profile row shows a conflicts count when the last run had conflicts`() {
+    fun `profile row counts only resolvable conflicts`() {
         runBlocking {
             repository.save(
                 profile(id = "p1", name = "My Server").copy(
                     lastConflicts = listOf(
-                        ConflictRecord("a.txt", "conflicting updates"),
-                        ConflictRecord("b.txt", "atomic directory"),
+                        ConflictRecord("a.txt", "conflicting updates", resolvable = true),
+                        ConflictRecord("b.txt", "contents changed on both sides", resolvable = true),
+                        ConflictRecord("broken/", "Syncing symbolic links is disabled", resolvable = false),
                     ),
                 ),
             )
@@ -209,6 +210,7 @@ class ProfilesScreenTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("2 conflicts", substring = true).assertExists()
+        compose.onNodeWithText("3 conflicts", substring = true).assertDoesNotExist()
     }
 
     @Test

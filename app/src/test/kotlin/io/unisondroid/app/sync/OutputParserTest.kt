@@ -426,6 +426,30 @@ class OutputParserTest {
     }
 
     @Test
+    fun `skipped path containing a parenthesis splits at the last one`() {
+        val noBlock = feedAll(
+            "  skipped: report (1).txt (conflicting updates)\n",
+        ).first.finalize(0).conflicts.single()
+
+        assertEquals("report (1).txt", noBlock.path)
+        assertEquals("conflicting updates", noBlock.reason)
+        assertTrue(noBlock.resolvable)
+
+        val withBlock = feedAll(
+            "changed  <-?-> changed    report (1).txt\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 42    -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 99    -rw-r--r--\n" +
+                "\n" +
+                "  skipped: report (1).txt (conflicting updates)\n",
+        ).first.finalize(0).conflicts.single()
+
+        assertEquals("report (1).txt", withBlock.path)
+        assertEquals("conflicting updates", withBlock.reason)
+        assertEquals(42L, withBlock.local?.sizeBytes)
+        assertEquals(99L, withBlock.remote?.sizeBytes)
+    }
+
+    @Test
     fun `failed lines and zero-transfer complete summary finalize counts`() {
         assertEquals(
             SyncSummary(
@@ -464,14 +488,18 @@ class OutputParserTest {
     @Test
     fun `partially transferred segment in summary is tolerated`() {
         val (parser, _) = feedAll(
-            "Synchronization incomplete at 21:33:33  (2 items transferred, 1 partially transferred, 3 skipped, 4 failed)\n",
+            "  partially transferred: docs/report.pdf\n" +
+                "Synchronization incomplete at 21:33:33  (2 items transferred, 1 partially transferred, 3 skipped, 4 failed)\n",
         )
 
         val summary = parser.finalize(1)
         assertEquals(2, summary.transferred)
-        // The summary's failed count no longer has a counter to live in; with no
-        // `failed:`/`Failed [..]` lines there are no records to report.
-        assertTrue(summary.failed.isEmpty())
+        // The summary's partial count has no field of its own, but each per-file line
+        // is captured as a failure record so the partial is not silently dropped.
+        assertEquals(
+            listOf(FailedRecord("docs/report.pdf", "partially transferred")),
+            summary.failed,
+        )
         assertTrue(summary.conflicts.isEmpty())
     }
 }

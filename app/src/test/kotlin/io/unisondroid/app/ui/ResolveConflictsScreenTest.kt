@@ -135,6 +135,47 @@ class ResolveConflictsScreenTest {
         assertNull(engine.recorded)
     }
 
+    @Test
+    fun `busy resolve outcome shows the busy message`() {
+        val resolvable = ConflictRecord("notes/plan.txt", "conflicting updates", resolvable = true)
+        runBlocking { repository.save(seedProfile(lastConflicts = listOf(resolvable))) }
+        engine.nextOutcome = SyncOutcome.BUSY
+
+        compose.setContent {
+            UnisonDroidTheme { ResolveConflictsScreen(profileId = "p1") }
+        }
+        awaitTag("$RESOLVE_ROW_PREFIX${resolvable.path}")
+
+        compose.onNodeWithTag(RESOLVE_SYNC_TAG).performScrollTo().performClick()
+        compose.waitUntil(5_000) { engine.recorded != null }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag(RESOLVE_BUSY_TAG).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("A sync is already running", substring = true).assertExists()
+    }
+
+    @Test
+    fun `failed resolve outcome surfaces the failure`() {
+        val resolvable = ConflictRecord("notes/plan.txt", "conflicting updates", resolvable = true)
+        runBlocking { repository.save(seedProfile(lastConflicts = listOf(resolvable))) }
+        engine.nextOutcome = SyncOutcome.FAILED
+        engine.failureDetail = "process exited 3"
+
+        compose.setContent {
+            UnisonDroidTheme { ResolveConflictsScreen(profileId = "p1") }
+        }
+        awaitTag("$RESOLVE_ROW_PREFIX${resolvable.path}")
+
+        compose.onNodeWithTag(RESOLVE_SYNC_TAG).performScrollTo().performClick()
+        compose.waitUntil(5_000) { engine.recorded != null }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag(RESOLVE_FAILURE_TAG).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithText("process exited 3", substring = true).assertExists()
+    }
+
     private fun awaitTag(tag: String) {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
@@ -170,12 +211,16 @@ private class RecordingEngine : SyncEngine(
     var recorded: Map<String, Resolution>? = null
         private set
 
+    var nextOutcome: SyncOutcome = SyncOutcome.COMPLETED
+    var failureDetail: String? = null
+
     override suspend fun resolveConflicts(
         profileId: String,
         decisions: Map<String, Resolution>,
     ): SyncOutcome {
         recorded = decisions
-        return SyncOutcome.COMPLETED
+        failureDetail?.let { states.value = SyncState.Failed(profileId, SyncState.Reason.EXIT, it) }
+        return nextOutcome
     }
 }
 

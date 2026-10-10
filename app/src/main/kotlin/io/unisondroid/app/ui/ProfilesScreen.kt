@@ -225,9 +225,9 @@ private fun ProfileRow(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(LAST_SYNC_TAG),
                 )
-                if (profile.lastConflicts.isNotEmpty()) {
+                if (profile.lastConflicts.any { it.resolvable }) {
                     Text(
-                        text = "${profile.lastConflicts.size} conflicts",
+                        text = "${profile.lastConflicts.count { it.resolvable }} conflicts",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.testTag("$CONFLICTS_COUNT_PREFIX${profile.id}"),
                     )
