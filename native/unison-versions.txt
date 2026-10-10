@@ -1,0 +1,4 @@
+# Unison release tags bundled into the app, newest first.
+# Consumed by native/build-unison.sh and CI; asserted against UnisonInfo.BUNDLED.
+v2.54.0
+v2.53.8
