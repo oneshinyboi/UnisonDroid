@@ -242,6 +242,28 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `second request returns BUSY even when binaries vanished, keeping the running state`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
+        )
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        awaitState(h.engine) { it is SyncState.Syncing }
+        val syncing = h.engine.state.value
+
+        // The mutex must be checked before the binaries, so a busy engine never reports
+        // BINARY_MISSING and never clobbers the running sync's state.
+        File(nativeDir, "libunison.so").delete()
+        val second = withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.UNATTENDED) }
+
+        assertEquals(SyncOutcome.BUSY, second)
+        assertEquals(syncing, h.engine.state.value)
+
+        gate.complete(Unit)
+        withTimeout(10_000) { job.join() }
+    }
+
+    @Test
     fun `cancel kills process and reports CANCELLED`() = runTest {
         val gate = CompletableDeferred<Unit>()
         val h = harness(
@@ -578,8 +600,33 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `exit-two run with no parsed failures finishes WARNINGS not OK`() = runTest {
+    fun `same-path partial and hard failure classifies FAILED not WARNINGS`() = runTest {
         val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "  partially transferred: big/dir",
+                        "  failed: big/dir",
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 1 partially transferred, 0 skipped, 1 failed)",
+                    ),
+                    exit = 2,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertEquals(
+            listOf(FailedRecord("big/dir", "")),
+            finished.summary.failed,
+            "a hard failure must not be masked by the partial sentinel",
+        )
+        assertEquals(SyncResult.FAILED, h.repo.get("prof1")?.lastResult)
+    }
+
+    @Test
+    fun `exit-two run with no parsed failures finishes WARNINGS not OK`() = runTest {        val h = harness(
             scripts = listOf(
                 ScriptedProcess(
                     lines = listOf(

@@ -502,4 +502,42 @@ class OutputParserTest {
         )
         assertTrue(summary.conflicts.isEmpty())
     }
+
+    @Test
+    fun `a hard failure for the same path supersedes a partial transfer`() {
+        val (parser, _) = feedAll(
+            "  partially transferred: big/dir\n" +
+                "  failed: big/dir\n",
+        )
+
+        // The hard failure must win so the engine classifies the run FAILED, not WARNINGS.
+        assertEquals(listOf(FailedRecord("big/dir", "")), parser.finalize(2).failed)
+    }
+
+    @Test
+    fun `a partial transfer never overwrites an existing hard failure`() {
+        val (parser, _) = feedAll(
+            "Failed [big/dir]: Input/output error\n" +
+                "  partially transferred: big/dir\n",
+        )
+
+        assertEquals(listOf(FailedRecord("big/dir", "Input/output error")), parser.finalize(2).failed)
+    }
+
+    @Test
+    fun `a Failed-item message supersedes a partial transfer for the same path`() {
+        val (parser, _) = feedAll(
+            "  partially transferred: big/dir\n" +
+                "Failed [big/dir]: Input/output error\n",
+        )
+
+        assertEquals(listOf(FailedRecord("big/dir", "Input/output error")), parser.finalize(2).failed)
+    }
+
+    @Test
+    fun `duplicate pathless Error lines are deduped`() {
+        val (parser, _) = feedAll("Error: boom\nError: boom\n")
+
+        assertEquals(listOf(FailedRecord("", "boom")), parser.finalize(1).failed)
+    }
 }

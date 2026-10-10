@@ -49,6 +49,7 @@ const val RESOLVE_ROW_PREFIX = "resolve-row-"
 const val RESOLVE_SYNC_TAG = "resolve-sync"
 const val RESOLVE_BUSY_TAG = "resolve-busy"
 const val RESOLVE_FAILURE_TAG = "resolve-failure"
+const val RESOLVE_MISSING_TAG = "resolve-missing"
 const val RESOLVE_KEEP_LOCAL = "resolve-keepLocal"
 const val RESOLVE_KEEP_REMOTE = "resolve-keepRemote"
 const val RESOLVE_KEEP_BOTH = "resolve-keepBoth"
@@ -80,9 +81,12 @@ fun ResolveConflictsScreen(
     val state by engine.state.collectAsState()
 
     var refresh by remember { mutableIntStateOf(0) }
-    val profile by produceState<Profile?>(initialValue = null, repository, profileId, refresh) {
-        value = repository.get(profileId)
+    // A pair (loaded, profile) so the UI can tell "still loading" from "no such profile".
+    val lookup by produceState<Pair<Boolean, Profile?>>(initialValue = false to null, repository, profileId, refresh) {
+        value = true to repository.get(profileId)
     }
+    val profileLoaded = lookup.first
+    val profile = lookup.second
 
     var decisions by remember { mutableStateOf<Map<String, Resolution>>(emptyMap()) }
     var running by remember { mutableStateOf(false) }
@@ -90,6 +94,7 @@ fun ResolveConflictsScreen(
 
     ResolveConflictsContent(
         profile = profile,
+        profileLoaded = profileLoaded,
         state = state,
         running = running,
         outcome = outcome,
@@ -129,6 +134,7 @@ internal fun ResolveConflictsContent(
     onSync: () -> Unit,
     onDone: () -> Unit,
     onHostKeyDecision: (Boolean) -> Unit,
+    profileLoaded: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -150,7 +156,13 @@ internal fun ResolveConflictsContent(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when {
-                profile == null -> Text(text = "Loading…", style = MaterialTheme.typography.bodyLarge)
+                !profileLoaded -> Text(text = "Loading…", style = MaterialTheme.typography.bodyLarge)
+
+                profile == null -> Text(
+                    text = "Profile not found.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.testTag(RESOLVE_MISSING_TAG),
+                )
 
                 conflicts.isEmpty() -> Text(
                     text = "No conflicts to resolve.",
@@ -181,9 +193,12 @@ internal fun ResolveConflictsContent(
             }
 
             if (conflicts.isNotEmpty()) {
+                // Only meaningful choices (favor a side / keep both) justify a run;
+                // a pure "skip" selection or no selection at all would be a no-op.
+                val actionable = decisions.values.any { it != Resolution.SKIP }
                 Button(
                     onClick = onSync,
-                    enabled = !running,
+                    enabled = !running && actionable,
                     modifier = Modifier.testTag(RESOLVE_SYNC_TAG),
                 ) { Text(text = "Sync these choices") }
             }

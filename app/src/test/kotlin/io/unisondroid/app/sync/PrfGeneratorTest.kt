@@ -159,6 +159,19 @@ class PrfGeneratorTest {
     }
 
     @Test
+    fun `prefer older is dropped when advanced prefs disable times`() {
+        val lines = PrfGenerator.generate(
+            profile(policy = ConflictPolicy.PREFER_OLDER, advancedPrefs = "times = false\n"),
+            sshCommand(),
+        ).lines()
+
+        assertTrue(
+            lines.none { it == "prefer = older" },
+            "prefer = older must not be emitted with times=false (unison aborts the run); got:\n${lines.joinToString("\n")}",
+        )
+    }
+
+    @Test
     fun `prefer local writes the local root`() {
         val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_LOCAL), sshCommand()).lines()
 

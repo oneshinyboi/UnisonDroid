@@ -74,9 +74,9 @@ open class SyncEngine(
     private var activeJob: Job? = null
 
     open suspend fun requestSync(profileId: String, mode: SyncMode): SyncOutcome {
-        val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
         if (!syncMutex.tryLock()) return SyncOutcome.BUSY
         try {
+            val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
             return runSync(profileId, binary, sshBinary, mode)
         } finally {
             syncMutex.unlock()
@@ -91,9 +91,9 @@ open class SyncEngine(
      * out and unresolved ones remain.
      */
     open suspend fun resolveConflicts(profileId: String, decisions: Map<String, Resolution>): SyncOutcome {
-        val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
         if (!syncMutex.tryLock()) return SyncOutcome.BUSY
         try {
+            val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
             val profile = profiles.get(profileId)
             val extraPrefs =
                 if (profile == null) emptyList() else ConflictResolver.resolutionPreferences(profile, decisions)

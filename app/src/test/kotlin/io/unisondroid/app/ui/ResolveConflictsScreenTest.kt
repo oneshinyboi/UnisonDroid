@@ -1,5 +1,7 @@
 package io.unisondroid.app.ui
 
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -146,6 +148,7 @@ class ResolveConflictsScreenTest {
         }
         awaitTag("$RESOLVE_ROW_PREFIX${resolvable.path}")
 
+        compose.onNodeWithTag("$RESOLVE_KEEP_LOCAL-${resolvable.path}").performClick()
         compose.onNodeWithTag(RESOLVE_SYNC_TAG).performScrollTo().performClick()
         compose.waitUntil(5_000) { engine.recorded != null }
         compose.waitUntil(5_000) {
@@ -167,6 +170,7 @@ class ResolveConflictsScreenTest {
         }
         awaitTag("$RESOLVE_ROW_PREFIX${resolvable.path}")
 
+        compose.onNodeWithTag("$RESOLVE_KEEP_LOCAL-${resolvable.path}").performClick()
         compose.onNodeWithTag(RESOLVE_SYNC_TAG).performScrollTo().performClick()
         compose.waitUntil(5_000) { engine.recorded != null }
         compose.waitUntil(5_000) {
@@ -174,6 +178,33 @@ class ResolveConflictsScreenTest {
         }
 
         compose.onNodeWithText("process exited 3", substring = true).assertExists()
+    }
+
+    @Test
+    fun `sync button stays disabled until a decision is chosen`() {
+        val resolvable = ConflictRecord("notes/plan.txt", "conflicting updates", resolvable = true)
+        runBlocking { repository.save(seedProfile(lastConflicts = listOf(resolvable))) }
+
+        compose.setContent {
+            UnisonDroidTheme { ResolveConflictsScreen(profileId = "p1") }
+        }
+        awaitTag("$RESOLVE_ROW_PREFIX${resolvable.path}")
+
+        compose.onNodeWithTag(RESOLVE_SYNC_TAG).performScrollTo().assertIsNotEnabled()
+        assertNull(engine.recorded)
+
+        compose.onNodeWithTag("$RESOLVE_KEEP_LOCAL-${resolvable.path}").performClick()
+        compose.onNodeWithTag(RESOLVE_SYNC_TAG).assertIsEnabled()
+    }
+
+    @Test
+    fun `unknown profile shows a not-found state`() {
+        compose.setContent {
+            UnisonDroidTheme { ResolveConflictsScreen(profileId = "missing") }
+        }
+
+        awaitTag(RESOLVE_MISSING_TAG)
+        compose.onNodeWithText("Profile not found", substring = true).assertExists()
     }
 
     private fun awaitTag(tag: String) {

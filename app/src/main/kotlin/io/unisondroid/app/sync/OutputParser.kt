@@ -144,22 +144,26 @@ class OutputParser {
         // not fully complete. Surface it as a failure record (deduped by path) so it
         // is not silently dropped; the engine classifies the run as a warning.
         PARTIALLY_TRANSFERRED.find(line)?.let { match ->
-            recordFailure(path = match.groupValues[1].trim(), message = PARTIAL_TRANSFER_MESSAGE)
+            recordFailure(path = match.groupValues[1].trim(), message = PARTIAL_TRANSFER_MESSAGE, hard = false)
             return emptyList()
         }
 
         FAILED_FILE.find(line)?.let { match ->
-            recordFailure(path = match.groupValues[1].trim(), message = "")
+            recordFailure(path = match.groupValues[1].trim(), message = "", hard = true)
             return emptyList()
         }
 
         FAILED_ITEM.find(line)?.let { match ->
-            recordFailure(path = match.groupValues[1].trim(), message = match.groupValues[2].trim())
+            recordFailure(path = match.groupValues[1].trim(), message = match.groupValues[2].trim(), hard = true)
             return emptyList()
         }
 
         if (line.startsWith(ERROR_PREFIX)) {
-            failedWithoutPath += FailedRecord(path = "", message = line.substringAfter(ERROR_PREFIX).trim())
+            val message = line.substringAfter(ERROR_PREFIX).trim()
+            // Pathless error lines have no key, so dedupe identical messages instead.
+            if (failedWithoutPath.none { it.message == message }) {
+                failedWithoutPath += FailedRecord(path = "", message = message)
+            }
             return emptyList()
         }
 
@@ -195,14 +199,25 @@ class OutputParser {
         return emptyList()
     }
 
-    // Dedupe failure records by path: `Failed [path]: msg` and `  failed: path` can
-    // both describe the same transient failure. Keep the first record, but upgrade it
-    // if a later line carries a message the first one lacked.
-    private fun recordFailure(path: String, message: String) {
+    // Dedupe failure records by path. Unison prints both `Failed [path]: msg` and
+    // `  failed: path` for one transient failure, and `  partially transferred: path`
+    // for an incomplete transfer. A real failure must never be masked by a partial
+    // record for the same path, so a hard failure supersedes a partial, and a partial
+    // never overwrites an existing record.
+    private fun recordFailure(path: String, message: String, hard: Boolean) {
         val existing = failedByPath[path]
-        if (existing == null || (existing.message.isBlank() && message.isNotBlank())) {
+        if (existing == null) {
             failedByPath[path] = FailedRecord(path = path, message = message)
+            return
         }
+        if (!hard) return
+        val keepMessage =
+            when {
+                message.isNotBlank() -> message
+                existing.message != PARTIAL_TRANSFER_MESSAGE -> existing.message
+                else -> ""
+            }
+        failedByPath[path] = FailedRecord(path = path, message = keepMessage)
     }
 
     private fun closeDisplayBlock() {

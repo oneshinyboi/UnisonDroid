@@ -48,11 +48,17 @@ object PrfGenerator {
     internal fun conflictPolicyPreferences(profile: Profile): List<String> = when (profile.conflictPolicy) {
         ConflictPolicy.SKIP -> emptyList()
         ConflictPolicy.PREFER_NEWER -> listOf("prefer = newer")
-        ConflictPolicy.PREFER_OLDER -> listOf("prefer = older")
+        // `prefer = older` requires synced modtimes; if the user disabled them in the
+        // advanced prefs, Unison aborts the whole run, so fall back to skipping the
+        // conflict (the safe default) instead of failing the sync.
+        ConflictPolicy.PREFER_OLDER -> if (timesDisabled(profile)) emptyList() else listOf("prefer = older")
         ConflictPolicy.PREFER_LOCAL -> listOf("prefer = ${profile.localRoot}")
         ConflictPolicy.PREFER_REMOTE -> listOf("prefer = ${sshRoot(profile)}")
         ConflictPolicy.KEEP_BOTH -> listOf("prefer = newer", "copyonconflict = true")
     }
+
+    private fun timesDisabled(profile: Profile): Boolean =
+        TIMES_FALSE.containsMatchIn(profile.advancedPrefs)
 
     // A scalar pref such as `copyonconflict = true` must be emitted at most once,
     // even when both the profile's policy and a per-file decision request it.
@@ -63,6 +69,9 @@ object PrfGenerator {
     }
 
     private const val PREFER_PARTIAL_PREFIX = "preferpartial"
+
+    // A `times = false` line (any spacing) in the advanced prefs disables modtime syncing.
+    private val TIMES_FALSE = Regex("""(?m)^\s*times\s*=\s*false\s*$""")
 
     internal fun sshRoot(profile: Profile): String =
         "ssh://${profile.user}@${profile.host}/${profile.remoteRoot}"
