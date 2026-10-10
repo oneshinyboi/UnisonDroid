@@ -1,0 +1,6 @@
+Copy the run log, and fix large syncs aborting.
+
+- New: a "Copy log" action on the run screen copies the current Unison output.
+- Fixed: large syncs could abort with "Fatal error: exception Sys_blocked_io"
+  once Unison's output filled the pipe. The app now captures Unison's output
+  to a file, so a large burst of log lines can no longer kill the run.
