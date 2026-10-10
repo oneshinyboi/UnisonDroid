@@ -24,13 +24,18 @@ import java.util.concurrent.TimeUnit
  */
 class SyncScheduler(private val context: Context) {
 
-    fun syncNow(profileId: String, variant: SyncVariant = SyncVariant.TWO_WAY) {
+    fun syncNow(
+        profileId: String,
+        variant: SyncVariant = SyncVariant.TWO_WAY,
+        confirmed: Boolean = false,
+    ) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setInputData(
                 workDataOf(
                     SyncWorker.KEY_PROFILE_ID to profileId,
                     SyncWorker.KEY_MODE to SyncMode.INTERACTIVE.name,
                     SyncWorker.KEY_VARIANT to variant.name,
+                    SyncWorker.KEY_CONFIRMED to confirmed,
                 ),
             )
             .build()

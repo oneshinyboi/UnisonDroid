@@ -40,6 +40,7 @@ sealed interface SyncState {
         LOCAL_PERMISSIONS,
         CANCELLED,
         EXIT,
+        CONFIRMATION_REQUIRED,
         UNKNOWN,
     }
 }
@@ -81,9 +82,20 @@ open class SyncEngine(
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant = SyncVariant.TWO_WAY,
+        confirmed: Boolean = false,
     ): SyncOutcome {
         if (!syncMutex.tryLock()) return SyncOutcome.BUSY
         try {
+            // Defense in depth: a destructive mirror must be explicitly confirmed by the caller,
+            // so a future deep link or programmatic run cannot delete files without the dialog.
+            if (variant.destroysTarget && !confirmed) {
+                _state.value = SyncState.Failed(
+                    profileId = profileId,
+                    reason = SyncState.Reason.CONFIRMATION_REQUIRED,
+                    detail = "Refusing to run a destructive mirror without confirmation",
+                )
+                return SyncOutcome.FAILED
+            }
             val (binary, sshBinary) = locateBinaries(profileId) ?: return SyncOutcome.FAILED
             return runSync(profileId, binary, sshBinary, mode, variant = variant)
         } finally {

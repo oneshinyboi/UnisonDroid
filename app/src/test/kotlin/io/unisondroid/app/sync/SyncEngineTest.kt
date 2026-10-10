@@ -816,7 +816,12 @@ class SyncEngineTest {
         h.repo.save(h.repo.get("prof1")!!.copy(conflictPolicy = ConflictPolicy.KEEP_BOTH))
 
         withTimeout(10_000) {
-            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_TO_SERVER)
+            h.engine.requestSync(
+                "prof1",
+                SyncMode.INTERACTIVE,
+                SyncVariant.MIRROR_TO_SERVER,
+                confirmed = true,
+            )
         }
 
         val text = prf ?: error("prf was not written")
@@ -954,6 +959,47 @@ class SyncEngineTest {
         assertEquals(SyncOutcome.COMPLETED, outcome)
         assertTrue(h.engine.state.value is SyncState.Finished)
         assertNull(h.repo.get("prof1")?.lastResult, "a connection test must not record a sync result")
+    }
+
+    @Test
+    fun `a destructive mirror without confirmation is refused before spawning unison`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        val outcome = withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_TO_SERVER)
+        }
+
+        assertEquals(SyncOutcome.FAILED, outcome)
+        assertEquals(
+            SyncState.Reason.CONFIRMATION_REQUIRED,
+            (h.engine.state.value as SyncState.Failed).reason,
+        )
+        assertTrue(h.runner.starts.isEmpty(), "an unconfirmed mirror must not start unison")
+        assertFalse(File(unisonDir, "prof1.prf").exists())
+    }
+
+    @Test
+    fun `a confirmed destructive mirror runs`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        val outcome = withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_TO_SERVER, confirmed = true)
+        }
+
+        assertEquals(SyncOutcome.COMPLETED, outcome)
+        assertEquals(1, h.runner.starts.size)
+    }
+
+    @Test
+    fun `a non-destructive copy runs without confirmation`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        val outcome = withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.COPY_TO_SERVER)
+        }
+
+        assertEquals(SyncOutcome.COMPLETED, outcome)
+        assertEquals(1, h.runner.starts.size)
     }
 
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =

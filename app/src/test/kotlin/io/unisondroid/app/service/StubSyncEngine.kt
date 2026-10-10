@@ -57,6 +57,10 @@ class StubSyncEngine : SyncEngine(
         private set
 
     @Volatile
+    var requestedConfirmed: Boolean = false
+        private set
+
+    @Volatile
     var requestCount = 0
         private set
 
@@ -64,10 +68,12 @@ class StubSyncEngine : SyncEngine(
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant,
+        confirmed: Boolean,
     ): SyncOutcome {
         requestedProfileId = profileId
         requestedMode = mode
         requestedVariant = variant
+        requestedConfirmed = confirmed
         requestCount += 1
         requestLatch.countDown()
         throwOnRequest?.let { throw it }

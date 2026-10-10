@@ -132,6 +132,14 @@ class SyncSchedulerTest {
         assertEquals(SyncVariant.MIRROR_TO_SERVER, engine.requestedVariant)
     }
 
+    @Test
+    fun `syncNow forwards destructive confirmation to the engine`() {
+        scheduler.syncNow("p42", SyncVariant.MIRROR_TO_SERVER, confirmed = true)
+
+        assertTrue("the worker must run", engine.requestLatch.await(10, TimeUnit.SECONDS))
+        assertTrue(engine.requestedConfirmed)
+    }
+
     private fun reconcile(profiles: List<Profile>, settings: AppSettings) =
         runBlocking { scheduler.reconcile(profiles, settings) }
 

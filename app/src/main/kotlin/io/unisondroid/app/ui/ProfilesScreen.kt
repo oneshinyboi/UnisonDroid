@@ -76,7 +76,7 @@ fun ProfilesScreen(
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onResolveConflicts: (String) -> Unit = {},
-    onRunVariant: (String, SyncVariant) -> Unit = { _, _ -> },
+    onRunVariant: (String, SyncVariant, Boolean) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -127,7 +127,7 @@ internal fun ProfilesContent(
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onResolveConflicts: (String) -> Unit = {},
-    onRunVariant: (String, SyncVariant) -> Unit = { _, _ -> },
+    onRunVariant: (String, SyncVariant, Boolean) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<Profile?>(null) }
@@ -185,7 +185,7 @@ internal fun ProfilesContent(
                             if (variant.destroysTarget) {
                                 pendingMirror = profile to variant
                             } else {
-                                onRunVariant(profile.id, variant)
+                                onRunVariant(profile.id, variant, false)
                             }
                         },
                         onEdit = { onOpenProfile(profile.id) },
@@ -226,7 +226,7 @@ internal fun ProfilesContent(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onRunVariant(profile.id, variant)
+                        onRunVariant(profile.id, variant, true)
                         pendingMirror = null
                     },
                     modifier = Modifier.testTag(MIRROR_CONFIRM_TAG),

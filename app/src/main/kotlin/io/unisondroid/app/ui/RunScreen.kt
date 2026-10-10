@@ -59,6 +59,7 @@ const val RUN_RESOLVE_TAG = "run-resolveConflicts"
 fun RunScreen(
     profileId: String,
     variant: SyncVariant = SyncVariant.TWO_WAY,
+    confirmed: Boolean = false,
     onResolveConflicts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -67,9 +68,9 @@ fun RunScreen(
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsState()
 
-    LaunchedEffect(profileId, variant) {
+    LaunchedEffect(profileId, variant, confirmed) {
         engine.beginRun()
-        SyncScheduler(context).syncNow(profileId, variant)
+        SyncScheduler(context).syncNow(profileId, variant, confirmed)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(

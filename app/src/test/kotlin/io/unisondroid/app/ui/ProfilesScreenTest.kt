@@ -307,14 +307,14 @@ class ProfilesScreenTest {
     @Test
     fun `copy to server runs the chosen variant`() {
         runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
-        var ran: Pair<String, SyncVariant>? = null
+        var ran: Triple<String, SyncVariant, Boolean>? = null
 
         compose.setContent {
             UnisonDroidTheme {
                 ProfilesScreen(
                     onOpenProfile = {},
                     onStartSync = {},
-                    onRunVariant = { id, variant -> ran = id to variant },
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
                 )
             }
         }
@@ -324,20 +324,20 @@ class ProfilesScreenTest {
         awaitTag(actionTag("p1", SyncVariant.COPY_TO_SERVER))
         compose.onNodeWithTag(actionTag("p1", SyncVariant.COPY_TO_SERVER)).performClick()
 
-        assertEquals("p1" to SyncVariant.COPY_TO_SERVER, ran)
+        assertEquals(Triple("p1", SyncVariant.COPY_TO_SERVER, false), ran)
     }
 
     @Test
     fun `mirror to server confirms before running`() {
         runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
-        var ran: Pair<String, SyncVariant>? = null
+        var ran: Triple<String, SyncVariant, Boolean>? = null
 
         compose.setContent {
             UnisonDroidTheme {
                 ProfilesScreen(
                     onOpenProfile = {},
                     onStartSync = {},
-                    onRunVariant = { id, variant -> ran = id to variant },
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
                 )
             }
         }
@@ -352,20 +352,20 @@ class ProfilesScreenTest {
 
         compose.onNodeWithTag(MIRROR_CONFIRM_TAG).performClick()
 
-        assertEquals("p1" to SyncVariant.MIRROR_TO_SERVER, ran)
+        assertEquals(Triple("p1", SyncVariant.MIRROR_TO_SERVER, true), ran)
     }
 
     @Test
     fun `mirror from server confirms before running`() {
         runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
-        var ran: Pair<String, SyncVariant>? = null
+        var ran: Triple<String, SyncVariant, Boolean>? = null
 
         compose.setContent {
             UnisonDroidTheme {
                 ProfilesScreen(
                     onOpenProfile = {},
                     onStartSync = {},
-                    onRunVariant = { id, variant -> ran = id to variant },
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
                 )
             }
         }
@@ -380,20 +380,20 @@ class ProfilesScreenTest {
 
         compose.onNodeWithTag(MIRROR_CONFIRM_TAG).performClick()
 
-        assertEquals("p1" to SyncVariant.MIRROR_FROM_SERVER, ran)
+        assertEquals(Triple("p1", SyncVariant.MIRROR_FROM_SERVER, true), ran)
     }
 
     @Test
     fun `canceling a mirror confirmation runs nothing`() {
         runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
-        var ran: Pair<String, SyncVariant>? = null
+        var ran: Triple<String, SyncVariant, Boolean>? = null
 
         compose.setContent {
             UnisonDroidTheme {
                 ProfilesScreen(
                     onOpenProfile = {},
                     onStartSync = {},
-                    onRunVariant = { id, variant -> ran = id to variant },
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
                 )
             }
         }

@@ -188,6 +188,18 @@ class RunScreenTest {
     }
 
     @Test
+    fun `passes destructive confirmation to the sync run`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                RunScreen(profileId = "p42", variant = SyncVariant.MIRROR_TO_SERVER, confirmed = true)
+            }
+        }
+
+        compose.waitUntil(5_000) { engine.requestedVariant == SyncVariant.MIRROR_TO_SERVER }
+        assertTrue(engine.requestedConfirmed)
+    }
+
+    @Test
     fun `shows the run variant as the title`() {
         compose.setContent {
             UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.COPY_FROM_SERVER) }
@@ -323,12 +335,18 @@ private class FakeSyncEngine : SyncEngine(
     var requestedVariant: SyncVariant? = null
         private set
 
+    @Volatile
+    var requestedConfirmed: Boolean = false
+        private set
+
     override suspend fun requestSync(
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant,
+        confirmed: Boolean,
     ): SyncOutcome {
         requestedVariant = variant
+        requestedConfirmed = confirmed
         return SyncOutcome.COMPLETED
     }
 

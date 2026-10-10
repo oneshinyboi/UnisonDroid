@@ -31,6 +31,7 @@ class SyncWorker(
         val variant = inputData.getString(KEY_VARIANT)
             ?.let { runCatching { SyncVariant.valueOf(it) }.getOrNull() }
             ?: SyncVariant.TWO_WAY
+        val confirmed = inputData.getBoolean(KEY_CONFIRMED, false)
 
         val notifications = SyncNotifications(applicationContext)
 
@@ -39,7 +40,7 @@ class SyncWorker(
         runCatching { setForeground(notifications.foregroundInfo(TEXT_RUNNING)) }
 
         val outcome = try {
-            ServiceLocator.engine(applicationContext).requestSync(profileId, mode, variant)
+            ServiceLocator.engine(applicationContext).requestSync(profileId, mode, variant, confirmed)
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {
@@ -69,6 +70,7 @@ class SyncWorker(
         const val KEY_PROFILE_ID = "profileId"
         const val KEY_MODE = "mode"
         const val KEY_VARIANT = "variant"
+        const val KEY_CONFIRMED = "confirmed"
         private const val TEXT_RUNNING = "Syncing…"
     }
 }

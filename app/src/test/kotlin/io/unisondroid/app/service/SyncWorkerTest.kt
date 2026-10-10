@@ -167,6 +167,34 @@ class SyncWorkerTest {
     }
 
     @Test
+    fun `worker forwards destructive confirmation to the engine`() {
+        engine.outcome = SyncOutcome.COMPLETED
+
+        runBlocking {
+            worker("p1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_TO_SERVER, confirmed = true).doWork()
+        }
+
+        assertTrue(engine.requestedConfirmed)
+    }
+
+    @Test
+    fun `missing confirmation input defaults to false`() {
+        val built = TestListenableWorkerBuilder<SyncWorker>(context)
+            .setInputData(
+                workDataOf(
+                    SyncWorker.KEY_PROFILE_ID to "p1",
+                    SyncWorker.KEY_MODE to SyncMode.INTERACTIVE.name,
+                    SyncWorker.KEY_VARIANT to SyncVariant.MIRROR_TO_SERVER.name,
+                ),
+            )
+            .build()
+
+        runBlocking { built.doWork() }
+
+        assertEquals(false, engine.requestedConfirmed)
+    }
+
+    @Test
     fun `missing variant input defaults to two way`() {
         val built = TestListenableWorkerBuilder<SyncWorker>(context)
             .setInputData(
@@ -186,19 +214,22 @@ class SyncWorkerTest {
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant = SyncVariant.TWO_WAY,
+        confirmed: Boolean = false,
     ): SyncWorker =
         TestListenableWorkerBuilder<SyncWorker>(context)
-            .setInputData(input(profileId, mode, variant))
+            .setInputData(input(profileId, mode, variant, confirmed))
             .build()
 
     private fun input(
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant = SyncVariant.TWO_WAY,
+        confirmed: Boolean = false,
     ) = workDataOf(
         SyncWorker.KEY_PROFILE_ID to profileId,
         SyncWorker.KEY_MODE to mode.name,
         SyncWorker.KEY_VARIANT to variant.name,
+        SyncWorker.KEY_CONFIRMED to confirmed,
     )
 
     private fun terminalNotificationText(): String? =

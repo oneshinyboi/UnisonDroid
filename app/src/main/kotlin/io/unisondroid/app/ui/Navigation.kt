@@ -12,7 +12,7 @@ import io.unisondroid.app.sync.SyncVariant
 object Routes {
     const val PROFILES = "profiles"
     const val EDITOR = "editor/{id}"
-    const val RUN = "run/{id}?variant={variant}"
+    const val RUN = "run/{id}?variant={variant}&confirmed={confirmed}"
     const val RESOLVE = "resolve/{id}"
     const val KEYS = "keys"
     const val ABOUT = "about"
@@ -22,8 +22,11 @@ object Routes {
 
     fun editor(id: String?): String = if (id.isNullOrEmpty()) EDITOR_NEW else "editor/$id"
 
-    fun run(id: String, variant: SyncVariant = SyncVariant.TWO_WAY): String =
-        "run/$id?variant=${variant.name}"
+    fun run(
+        id: String,
+        variant: SyncVariant = SyncVariant.TWO_WAY,
+        confirmed: Boolean = false,
+    ): String = "run/$id?variant=${variant.name}&confirmed=$confirmed"
 
     fun resolve(id: String): String = "resolve/$id"
 }
@@ -39,7 +42,9 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
                 onOpenAbout = { navController.navigate(Routes.ABOUT) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onResolveConflicts = { id -> navController.navigate(Routes.resolve(id)) },
-                onRunVariant = { id, variant -> navController.navigate(Routes.run(id, variant)) },
+                onRunVariant = { id, variant, confirmed ->
+                    navController.navigate(Routes.run(id, variant, confirmed))
+                },
             )
         }
         composable(
@@ -66,15 +71,21 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
                     type = NavType.StringType
                     defaultValue = SyncVariant.TWO_WAY.name
                 },
+                navArgument("confirmed") {
+                    type = NavType.StringType
+                    defaultValue = "false"
+                },
             ),
         ) { entry ->
             val profileId = entry.arguments?.getString("id").orEmpty()
             val variant = entry.arguments?.getString("variant")
                 ?.let { runCatching { SyncVariant.valueOf(it) }.getOrNull() }
                 ?: SyncVariant.TWO_WAY
+            val confirmed = entry.arguments?.getString("confirmed")?.toBoolean() ?: false
             RunScreen(
                 profileId = profileId,
                 variant = variant,
+                confirmed = confirmed,
                 onResolveConflicts = { navController.navigate(Routes.resolve(profileId)) },
             )
         }
