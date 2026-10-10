@@ -81,24 +81,32 @@ fun ProfileEditorScreen(
     var hasAccess by remember { mutableStateOf(hasAllFilesAccess(context)) }
     val requestAccess = rememberAllFilesAccessRequest { hasAccess = it }
 
-    val notificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) {}
     val batteryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) {}
+    val launchBatteryExemption: () -> Unit = {
+        batteryExemptionIntent(context)?.let { batteryLauncher.launch(it) }
+    }
+    // Continue to the battery-exemption prompt only after the notification request has
+    // resolved: launching the settings activity while the runtime-permission dialog is
+    // still in flight can drop that result or dismiss the dialog.
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { launchBatteryExemption() }
     // Auto-sync runs in the background, so when the user turns it on we ask for the
-    // notification permission (to promote work to a foreground service) and, if the
-    // app is still battery-optimized, prompt for the exemption that lets it survive Doze.
+    // notification permission (to promote work to a foreground service) and, if the app
+    // is still battery-optimized, prompt for the exemption that lets it survive Doze.
     val onAutoSyncEnabled: () -> Unit = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
+        val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            ) != PackageManager.PERMISSION_GRANTED
+        if (needsNotificationPermission) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            launchBatteryExemption()
         }
-        batteryExemptionIntent(context)?.let { batteryLauncher.launch(it) }
     }
 
     val loaded by produceState<EditorData?>(initialValue = null, repository, vault, profileId) {

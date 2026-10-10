@@ -1,5 +1,6 @@
 package io.unisondroid.app.ui
 
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -233,6 +234,31 @@ class ProfileEditorScreenTest {
             runBlocking { repository.get("p1")?.autoSyncEnabled == false }
         }
         assertFalse(runBlocking { repository.get("p1")!!.autoSyncEnabled })
+    }
+
+    @Test
+    fun `auto-sync switch notifies only when it is turned on`() {
+        var enabledCount = 0
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorContent(
+                    initial = null,
+                    keys = emptyList(),
+                    onSave = {},
+                    onAutoSyncEnabled = { enabledCount++ },
+                )
+            }
+        }
+
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).performScrollTo().assertIsOff()
+
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).performScrollTo().performClick()
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).assertIsOn()
+        assertEquals("turning auto-sync on must trigger the permission flow once", 1, enabledCount)
+
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).performScrollTo().performClick()
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).assertIsOff()
+        assertEquals("turning auto-sync off must not trigger the permission flow", 1, enabledCount)
     }
 
     private fun fillRequired() {
