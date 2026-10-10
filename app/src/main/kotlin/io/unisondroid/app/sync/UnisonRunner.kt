@@ -8,8 +8,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class BinaryLocator(private val nativeLibraryDir: File) {
-    fun locate(): BinaryStatus {
-        val candidate = File(nativeLibraryDir, "libunison.so")
+    fun locate(fileName: String): BinaryStatus {
+        val candidate = File(nativeLibraryDir, fileName)
         return if (candidate.isFile) BinaryStatus.Available(candidate) else BinaryStatus.Missing
     }
 

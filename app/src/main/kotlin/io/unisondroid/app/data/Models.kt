@@ -15,6 +15,7 @@ data class Profile(
     val sshKeyId: String,
     val transport: Transport = Transport.SSH_EXEC,
     val serverCommand: String = "unison",
+    val unisonVersion: String = "",
     val ignorePatterns: List<String> = emptyList(),
     val advancedPrefs: String = "",
     val autoSyncEnabled: Boolean = false,

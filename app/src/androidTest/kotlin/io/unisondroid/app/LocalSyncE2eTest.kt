@@ -13,6 +13,7 @@ import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.PrfGenerator
 import io.unisondroid.app.sync.SshCommand
 import io.unisondroid.app.sync.SyncSummary
+import io.unisondroid.app.sync.UnisonInfo
 import io.unisondroid.app.ui.hasAllFilesAccess
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -246,8 +247,8 @@ class LocalSyncE2eTest {
 
     private fun locateBinary(): File {
         val nativeDir = File(InstrumentationRegistry.getInstrumentation().targetContext.applicationInfo.nativeLibraryDir)
-        val status = BinaryLocator(nativeDir).locate()
-        assertTrue("libunison.so must be present in $nativeDir", status is BinaryStatus.Available)
+        val status = BinaryLocator(nativeDir).locate(UnisonInfo.DEFAULT.fileName)
+        assertTrue("${UnisonInfo.DEFAULT.fileName} must be present in $nativeDir", status is BinaryStatus.Available)
         return (status as BinaryStatus.Available).path
     }
 

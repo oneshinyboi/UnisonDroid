@@ -135,19 +135,17 @@ class UnisonRunnerTest {
     }
 
     @Test
-    fun `locate returns Available pointing at libunison so when present`() {
+    fun `locate returns Available pointing at the named file when present`() {
         val nativeDir = File(tempDir, "native").apply { mkdirs() }
-        val lib = File(nativeDir, "libunison.so").apply { writeText("fake-so") }
+        val lib = File(nativeDir, "libunison_2_53_8.so").apply { writeText("fake-so") }
 
-        val status = BinaryLocator(nativeDir).locate()
-
-        assertEquals(BinaryStatus.Available(lib), status)
+        assertEquals(BinaryStatus.Available(lib), BinaryLocator(nativeDir).locate("libunison_2_53_8.so"))
     }
 
     @Test
-    fun `locate returns Missing when libunison so is absent`() {
+    fun `locate returns Missing when the named file is absent`() {
         val nativeDir = File(tempDir, "native").apply { mkdirs() }
 
-        assertEquals(BinaryStatus.Missing, BinaryLocator(nativeDir).locate())
+        assertEquals(BinaryStatus.Missing, BinaryLocator(nativeDir).locate("libunison_2_54_0.so"))
     }
 }

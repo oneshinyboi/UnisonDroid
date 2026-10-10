@@ -276,7 +276,7 @@ class SyncEngineTest {
 
         // The mutex must be checked before the binaries, so a busy engine never reports
         // BINARY_MISSING and never clobbers the running sync's state.
-        File(nativeDir, "libunison.so").delete()
+        File(nativeDir, UnisonInfo.DEFAULT.fileName).delete()
         val second = withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.UNATTENDED) }
 
         assertEquals(SyncOutcome.BUSY, second)
@@ -308,7 +308,7 @@ class SyncEngineTest {
     fun `binary missing fails with BINARY_MISSING before any IO`() = runTest {
         val h = harness(
             scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
-            binaryAvailable = false,
+            availableVersions = emptySet(),
         )
 
         val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
@@ -316,7 +316,7 @@ class SyncEngineTest {
         val failed = h.engine.state.value as SyncState.Failed
         assertEquals(SyncOutcome.FAILED, outcome)
         assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
-        assertTrue(failed.detail.contains("libunison.so"), "detail was: ${failed.detail}")
+        assertTrue(failed.detail.contains(UnisonInfo.DEFAULT.fileName), "detail was: ${failed.detail}")
         assertTrue(h.runner.starts.isEmpty())
         assertFalse(File(unisonDir, "prof1.prf").exists())
     }
@@ -1075,14 +1075,57 @@ class SyncEngineTest {
         assertTrue(h.runner.starts.isEmpty())
     }
 
+    @Test
+    fun `profile version selects the matching bundled binary`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            unisonVersion = "2.53.8",
+        )
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertEquals(File(nativeDir, "libunison_2_53_8.so"), h.startedBinaries.single())
+    }
+
+    @Test
+    fun `blank version runs the default binary`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertEquals(File(nativeDir, UnisonInfo.DEFAULT.fileName), h.startedBinaries.single())
+    }
+
+    @Test
+    fun `unknown version falls back to the default binary`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            unisonVersion = "9.9.9",
+        )
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertEquals(File(nativeDir, UnisonInfo.DEFAULT.fileName), h.startedBinaries.single())
+    }
+
+    @Test
+    fun `selected binary missing names that exact file`() = runTest {
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))),
+            unisonVersion = "2.53.8",
+            availableVersions = setOf("2.54.0"),
+        )
+        val outcome = withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val failed = h.engine.state.value as SyncState.Failed
+        assertEquals(SyncOutcome.FAILED, outcome)
+        assertEquals(SyncState.Reason.BINARY_MISSING, failed.reason)
+        assertTrue(failed.detail.contains("libunison_2_53_8.so"), "detail was: ${failed.detail}")
+        assertTrue(h.runner.starts.isEmpty())
+    }
+
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =
         withTimeout(10_000) { engine.state.first(predicate) }
 
     private suspend fun harness(
         scripts: List<ScriptedProcess>,
         profileIds: List<String> = listOf("prof1", "prof2"),
+        unisonVersion: String = "",
+        availableVersions: Set<String> = UnisonInfo.BUNDLED.map { it.version }.toSet(),
         hostIsKnown: Boolean = true,
-        binaryAvailable: Boolean = true,
         sshBinaryAvailable: Boolean = true,
         hostKeyDecisionTimeoutMs: Long = 300_000L,
         removableVolume: (String) -> Boolean = { false },
@@ -1095,13 +1138,14 @@ class SyncEngineTest {
         ),
         onStart: ((Map<String, String>, List<String>) -> Unit)? = null,
     ): Harness {
-        if (binaryAvailable) File(nativeDir, "libunison.so").writeText("fake-binary")
+        UnisonInfo.BUNDLED.filter { it.version in availableVersions }
+            .forEach { File(nativeDir, it.fileName).writeText("fake-binary") }
         if (sshBinaryAvailable) File(nativeDir, "libssh.so").writeText("fake-ssh")
         val store = JsonStore(dataDir)
         val repo = ProfileRepository(store)
         val vault = KeyVault(store, IdentityCipher, FakeSshTool())
         val key = vault.generate("phone-key")
-        val profiles = profileIds.associateWith { profile(it, key.id) }
+        val profiles = profileIds.associateWith { profile(it, key.id, unisonVersion) }
         profiles.values.forEach { repo.save(it) }
         val events = mutableListOf<String>()
         val sshTool = FakeSshTool().apply {
@@ -1109,12 +1153,13 @@ class SyncEngineTest {
             this.hostIsKnown = hostIsKnown
         }
         val runner = FakeRunner(scripts, events, onStart)
+        val startedBinaries = mutableListOf<File>()
         val engine = SyncEngine(
             binaryLocator = BinaryLocator(nativeDir),
             profiles = repo,
             keys = vault,
             sshTool = sshTool,
-            runnerFactory = { _ -> runner },
+            runnerFactory = { binary -> startedBinaries += binary; runner },
             parserFactory = { OutputParser() },
             unisonDir = unisonDir,
             sshHome = sshHome,
@@ -1122,10 +1167,10 @@ class SyncEngineTest {
             hostKeyDecisionTimeoutMs = hostKeyDecisionTimeoutMs,
             removableVolume = removableVolume,
         )
-        return Harness(engine, repo, vault, sshTool, runner, events, profiles, key.id)
+        return Harness(engine, repo, vault, sshTool, runner, events, profiles, key.id, startedBinaries)
     }
 
-    private fun profile(id: String, sshKeyId: String) = Profile(
+    private fun profile(id: String, sshKeyId: String, unisonVersion: String = "") = Profile(
         id = id,
         name = "Profile $id",
         localRoot = "/storage/emulated/0/Sync",
@@ -1135,6 +1180,7 @@ class SyncEngineTest {
         user = "syncuser",
         remoteSocketPort = REMOTE_SOCKET_PORT,
         sshKeyId = sshKeyId,
+        unisonVersion = unisonVersion,
     )
 
     private data class Harness(
@@ -1146,6 +1192,7 @@ class SyncEngineTest {
         val events: MutableList<String>,
         val profiles: Map<String, Profile>,
         val keyId: String,
+        val startedBinaries: MutableList<File>,
     )
 
     private object IdentityCipher : KeyCipher {
@@ -1198,7 +1245,7 @@ class SyncEngineTest {
         val SERVER_KNOWN_HOSTS_LINE = "[$HOST]:$SSH_PORT ssh-ed25519 AAAAad-hoc"
         val PROGRESS_LINE = " 50%   5/10  (5.0 MiB of 10 MiB)  1.0 MiB/s    00:05 ETA"
         val SUMMARY_LINE = "Synchronization complete at 21:33:33  (2 items transferred, 0 skipped, 0 failed)"
-        val FAKE_BINARY = File("/nowhere/libunison.so")
+        val FAKE_BINARY = File("/nowhere/libunison_2_54_0.so")
 
         fun scriptedOutput(script: ScriptedProcess): Flow<String> = flow {
             script.lines.forEachIndexed { index, line ->

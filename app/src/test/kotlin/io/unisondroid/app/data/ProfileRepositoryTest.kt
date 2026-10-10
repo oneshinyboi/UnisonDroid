@@ -85,4 +85,15 @@ class ProfileRepositoryTest {
         assertEquals(ConflictPolicy.SKIP, loaded.conflictPolicy)
         assertTrue(loaded.lastConflicts.isEmpty())
     }
+
+    @Test
+    fun `profiles saved before the version field existed load as blank`(@TempDir dir: File) = runTest {
+        File(dir, "profiles.json").writeText(
+            """[{"id":"p1","name":"Phone","localRoot":"/l","remoteRoot":"/r","host":"h","user":"u","sshKeyId":"k"}]""",
+        )
+
+        val loaded = ProfileRepository(JsonStore(dir)).profiles().single()
+
+        assertEquals("", loaded.unisonVersion)
+    }
 }

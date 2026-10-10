@@ -137,13 +137,14 @@ open class SyncEngine(
         }
     }
 
-    private fun locateBinaries(profileId: String): Pair<File, File>? {
-        val binary = when (val status = binaryLocator.locate()) {
+    private suspend fun locateBinaries(profileId: String): Pair<File, File>? {
+        val bundled = UnisonInfo.forVersion(profiles.get(profileId)?.unisonVersion.orEmpty())
+        val binary = when (val status = binaryLocator.locate(bundled.fileName)) {
             is BinaryStatus.Missing -> {
                 _state.value = SyncState.Failed(
                     profileId = profileId,
                     reason = SyncState.Reason.BINARY_MISSING,
-                    detail = "libunison.so not found in the native library directory",
+                    detail = "${bundled.fileName} not found in the native library directory",
                 )
                 return null
             }
