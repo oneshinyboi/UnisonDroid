@@ -71,6 +71,8 @@ object PrfGenerator {
     private const val PREFER_PARTIAL_PREFIX = "preferpartial"
 
     // A `times = false` line (any spacing) in the advanced prefs disables modtime syncing.
+    // Only the profile's literal advancedPrefs are inspected; a `times = false` in a
+    // sourced/included pref file would not be detected (the app never writes those).
     private val TIMES_FALSE = Regex("""(?m)^\s*times\s*=\s*false\s*$""")
 
     internal fun sshRoot(profile: Profile): String =

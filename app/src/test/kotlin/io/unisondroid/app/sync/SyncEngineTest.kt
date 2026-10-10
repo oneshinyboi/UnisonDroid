@@ -626,7 +626,8 @@ class SyncEngineTest {
     }
 
     @Test
-    fun `exit-two run with no parsed failures finishes WARNINGS not OK`() = runTest {        val h = harness(
+    fun `exit-two run with no parsed failures finishes WARNINGS not OK`() = runTest {
+        val h = harness(
             scripts = listOf(
                 ScriptedProcess(
                     lines = listOf(

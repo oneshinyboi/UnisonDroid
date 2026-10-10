@@ -94,8 +94,8 @@ class OutputParser {
             transferred = transferredFromSummary ?: lastProgressCount,
             conflicts = conflictsByPath.values.toList(),
             // Real unison prints both "Failed [path]: msg" and "  failed: path" for the
-            // same transient failure, so dedupe path-bearing entries by path. Error lines
-            // carry no path and are reported individually.
+            // same transient failure, so dedupe path-bearing entries by path. Pathless
+            // Error lines have no key, so identical messages are deduped instead.
             failed = failedByPath.values.toList() + failedWithoutPath,
         )
     }
