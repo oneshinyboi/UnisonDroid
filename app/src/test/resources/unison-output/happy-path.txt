@@ -2,4 +2,4 @@
 Looking for changes
  12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA 50%   5/10  (2.3 MiB of 4.5 MiB)  250 KiB/s    00:09 ETA100%  10/10  (4.5 MiB of 4.5 MiB)  00:00:00 ETA
 Saving synchronizer state
-Synchronization complete ... 10 files ... 4.5 MiB transferred
+Synchronization complete at 21:33:33  (10 items transferred, 0 skipped, 0 failed)

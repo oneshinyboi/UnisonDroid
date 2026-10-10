@@ -1,0 +1,2 @@
+  skipped: notes/plan.txt (conflicting updates)
+  skipped: broken/ (Syncing symbolic links is disabled)

@@ -16,6 +16,20 @@ sealed interface SyncEvent {
 
 data class SyncSummary(val transferred: Int, val failed: Int, val conflicts: Int)
 
+/**
+ * Reasons unison reports as `skipped: <path> (<reason>)` that represent a real
+ * conflict rather than a benign/unresolvable skip. See Unison 2.53.8 `uitext.ml`
+ * and `recon.ml`; anything else (e.g. a disabled feature) is a "problem" skip.
+ */
+val CONFLICT_REASONS = setOf(
+    "conflicting updates",
+    "atomic directory",
+    "properties changed on both sides",
+    "contents changed on both sides",
+    "symbolic links changed on both sides",
+    "skip requested",
+)
+
 class OutputParser {
 
     private val pending = StringBuilder()
@@ -70,87 +84,81 @@ class OutputParser {
     private fun parseLine(rawLine: String): List<SyncEvent> {
         val line = ANSI_ESCAPE.replace(rawLine, "").trim()
         if (line.isEmpty()) return emptyList()
-        val progress = PROGRESS.find(line)
-        val event: SyncEvent = when {
-            isKnownUnisonMismatch(line) -> SyncEvent.VersionMismatch(line)
 
-            line.startsWith(SUMMARY_PREFIX) -> {
-                countTransferred(line)
-                SyncEvent.Completed
-            }
+        if (isKnownUnisonMismatch(line)) return listOf(SyncEvent.VersionMismatch(line))
 
-            progress != null -> {
-                val pct = progress.groupValues[1].toInt()
-                lastProgressCount = progress.groupValues[2].toInt()
-                SyncEvent.Progress(pct / 100f, line)
-            }
-
-            line.contains(FAILED_MARKER) -> {
-                val rest = line.substringAfter(FAILED_MARKER).trim()
-                val separator = rest.indexOf(": ")
-                if (separator > 0) {
-                    SyncEvent.FailedItem(
-                        path = rest.substring(0, separator).trim(),
-                        message = rest.substring(separator + 2).trim(),
-                    )
-                } else {
-                    SyncEvent.FailedItem(path = rest, message = "")
-                }
-            }
-
-            line.startsWith(ERROR_PREFIX) ->
-                SyncEvent.FailedItem(path = "", message = line.substringAfter(ERROR_PREFIX).trim())
-
-            line.contains(CONFLICT_MARKER) ->
-                SyncEvent.Conflict(path = line.substringAfter(CONFLICT_MARKER).trim())
-
-            CONFLICT_LINE.find(line) != null ->
-                SyncEvent.Conflict(path = CONFLICT_LINE.find(line)!!.groupValues[1].trim())
-
-            line.contains("conflict", ignoreCase = true) -> SyncEvent.Conflict(path = line)
-
-            line.contains("different versions", ignoreCase = true) ||
-                line.contains("incompatible", ignoreCase = true) -> SyncEvent.VersionMismatch(line)
-
-            else -> return emptyList()
+        if (line.startsWith(SUMMARY_PREFIX)) {
+            SUMMARY.find(line)?.let { transferredFromSummary = it.groupValues[1].toInt() }
+            return listOf(SyncEvent.Completed)
         }
-        return listOf(event).also {
-            when (event) {
-                is SyncEvent.Conflict -> conflicts++
-                is SyncEvent.FailedItem -> failed++
-                else -> {}
-            }
+
+        PROGRESS.find(line)?.let { match ->
+            val pct = match.groupValues[1].toInt()
+            lastProgressCount = match.groupValues[2].toInt()
+            return listOf(SyncEvent.Progress(pct / 100f, line))
         }
+
+        SKIP.find(line)?.let { match ->
+            val path = match.groupValues[1].trim()
+            val reason = match.groupValues[2].trim()
+            if (reason in CONFLICT_REASONS) {
+                conflicts++
+                return listOf(SyncEvent.Conflict(path = path))
+            }
+            return emptyList()
+        }
+
+        FAILED_FILE.find(line)?.let { match ->
+            failed++
+            return listOf(SyncEvent.FailedItem(path = match.groupValues[1].trim(), message = ""))
+        }
+
+        FAILED_ITEM.find(line)?.let { match ->
+            failed++
+            return listOf(
+                SyncEvent.FailedItem(
+                    path = match.groupValues[1].trim(),
+                    message = match.groupValues[2].trim(),
+                ),
+            )
+        }
+
+        if (line.startsWith(ERROR_PREFIX)) {
+            failed++
+            return listOf(SyncEvent.FailedItem(path = "", message = line.substringAfter(ERROR_PREFIX).trim()))
+        }
+
+        if (line.contains("different versions", ignoreCase = true) ||
+            line.contains("incompatible", ignoreCase = true)
+        ) {
+            return listOf(SyncEvent.VersionMismatch(line))
+        }
+
+        return emptyList()
     }
 
     private fun isKnownUnisonMismatch(line: String): Boolean =
         REAL_MISMATCH_MARKERS.any { line.contains(it) }
-
-    private fun countTransferred(line: String) {
-        val fromItems = ITEMS_TRANSFERRED.find(line)?.groupValues?.get(1)?.toInt()
-        val fromFiles = FILES_TRANSFERRED.find(line)?.groupValues?.get(1)?.toInt()
-        val count = fromItems ?: fromFiles
-        if (count != null) transferredFromSummary = count
-    }
 
     companion object {
         private val ANSI_ESCAPE = Regex(Char(27) + "\\[[0-9;?]*[A-Za-z]")
 
         private val PROGRESS = Regex("""^\s*(\d{1,3})%\s+(\d+)/(\d+)\s+\(([^)]*) of ([^)]*)\)\s+.*ETA\s*$""")
 
-        private val ITEMS_TRANSFERRED = Regex("(\\d+)\\s+items?\\s+transferred")
+        // Anchored on "Synchronization" so the earlier "N items will be synced, M skipped"
+        // line is ignored. Matches both the complete and incomplete terminators.
+        private val SUMMARY =
+            Regex("""Synchronization (?:complete|incomplete) at \d{2}:\d{2}:\d{2}\s+\((\d+) items? transferred, (\d+) skipped, (\d+) failed.*\)""")
 
-        private val FILES_TRANSFERRED = Regex("(\\d+)\\s+files?\\b")
+        private val SKIP = Regex("""^\s*skipped:\s+(.*?)\s+\((.*)\)\s*$""")
 
-        private const val SUMMARY_PREFIX = "Synchronization complete"
+        private val FAILED_FILE = Regex("""^\s*failed:\s+(.*)$""")
 
-        private const val FAILED_MARKER = "[FAILED]"
+        private val FAILED_ITEM = Regex("""^Failed \[(.*?)]:\s?(.*)$""")
+
+        private const val SUMMARY_PREFIX = "Synchronization "
 
         private const val ERROR_PREFIX = "Error:"
-
-        private const val CONFLICT_MARKER = "[CONFLICT]"
-
-        private val CONFLICT_LINE = Regex("(?i)^conflict:\\s*(.+)$")
 
         private val REAL_MISMATCH_MARKERS = listOf(
             "Received unexpected header from the server",

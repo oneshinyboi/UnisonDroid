@@ -1,0 +1,6 @@
+ 12%   1/4  (1.0 MiB of 4.0 MiB)  1.0 MiB/s    00:03 ETA
+  skipped: notes/plan.txt (conflicting updates)
+  skipped: broken/ (Syncing symbolic links is disabled)
+  failed: docs/report.pdf
+Failed [photos/raw/img.cr2]: Input/output error
+Synchronization incomplete at 21:33:33  (1 item transferred, 2 skipped, 2 failed)

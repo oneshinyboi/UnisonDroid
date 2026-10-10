@@ -22,6 +22,8 @@ class OutputParserTest {
         return parser to events
     }
 
+    private fun feedFinalize(name: String): SyncSummary = feedAll(fixture(name)).first.finalize(0)
+
     @Test
     fun `progress lines emit fraction and label`() {
         val raw = " 12%   3/10  (1.2 MiB of 4.5 MiB)  250 KiB/s    00:12 ETA"
@@ -78,7 +80,7 @@ class OutputParserTest {
         val progressLine = "100%  1/1  (1.0 MiB of 1.0 MiB)  $label  00:00:00 ETA"
         val text =
             "$progressLine\n" +
-                "Synchronization complete ... 1 files ... 1 KiB transferred\n"
+                "Synchronization complete at 21:33:33  (1 item transferred, 0 skipped, 0 failed)\n"
         val (parser, events) = feedAll(text, chunkSize = 1024)
 
         assertEquals(2, events.size)
@@ -127,12 +129,11 @@ class OutputParserTest {
                 SyncEvent.Conflict("music/playlist.m3u"),
                 SyncEvent.FailedItem("docs/report.pdf", ""),
                 SyncEvent.FailedItem("photos/raw/img.cr2", "Input/output error"),
-                SyncEvent.FailedItem("", "Input/output error [read()/write()]"),
                 SyncEvent.Completed,
             ),
             events,
         )
-        assertEquals(SyncSummary(transferred = 2, failed = 3, conflicts = 3), parser.finalize(0))
+        assertEquals(SyncSummary(transferred = 2, failed = 2, conflicts = 3), parser.finalize(0))
     }
 
     @Test
@@ -185,7 +186,7 @@ class OutputParserTest {
             progressEvents,
         )
 
-        val (_, conflictEvents) = feedAll("[CONFLICT] design/different versions.txt\n")
+        val (_, conflictEvents) = feedAll("  skipped: design/different versions.txt (conflicting updates)\n")
         assertEquals(
             listOf(SyncEvent.Conflict("design/different versions.txt")),
             conflictEvents,
@@ -202,7 +203,7 @@ class OutputParserTest {
     fun `nonzero exit without Completed finalizes counts and appends nothing extra`() {
         val parser = OutputParser()
 
-        assertEquals(2, parser.feed("[FAILED] docs/report.pdf\nError: boom\n").size)
+        assertEquals(2, parser.feed("  failed: docs/report.pdf\nError: boom\n").size)
         assertEquals(SyncSummary(transferred = 0, failed = 2, conflicts = 0), parser.finalize(1))
 
         val untouched = OutputParser()
@@ -225,7 +226,7 @@ class OutputParserTest {
     fun `trailing unterminated line still counts at finalize`() {
         val parser = OutputParser()
 
-        parser.feed("[CONFLICT] notes/plan.txt")
+        parser.feed("  skipped: notes/plan.txt (conflicting updates)")
 
         assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 1), parser.finalize(1))
     }
@@ -241,10 +242,26 @@ class OutputParserTest {
     }
 
     @Test
-    fun `synchronization incomplete is not Completed`() {
-        val (_, events) =
+    fun `synchronization incomplete still completes and counts from summary`() {
+        val (parser, events) =
             feedAll("Synchronization incomplete at 21:33:33  (1 item transferred, 0 skipped, 3 failed)\n")
 
-        assertTrue(events.isEmpty())
+        assertEquals(listOf<SyncEvent>(SyncEvent.Completed), events)
+        assertEquals(1, parser.finalize(1).transferred)
+    }
+
+    @Test
+    fun `incomplete summary still finalizes counts`() {
+        assertEquals(SyncSummary(transferred = 1, failed = 2, conflicts = 1), feedFinalize("incomplete.txt"))
+    }
+
+    @Test
+    fun `problem skips are not counted as conflicts`() {
+        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 1), feedFinalize("skips.txt"))
+    }
+
+    @Test
+    fun `failed lines and zero-transfer complete summary finalize counts`() {
+        assertEquals(SyncSummary(transferred = 0, failed = 2, conflicts = 0), feedFinalize("failures.txt"))
     }
 }

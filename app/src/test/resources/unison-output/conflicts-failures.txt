@@ -1,7 +1,6 @@
-[CONFLICT] notes/plan.txt
-[CONFLICT] photos/shared.bin
-conflict: music/playlist.m3u
-[FAILED] docs/report.pdf
-[FAILED] photos/raw/img.cr2: Input/output error
-Error: Input/output error [read()/write()]
-Synchronization complete ... 2 files ... 64 KiB transferred
+  skipped: notes/plan.txt (conflicting updates)
+  skipped: photos/shared.bin (properties changed on both sides)
+  skipped: music/playlist.m3u (contents changed on both sides)
+  failed: docs/report.pdf
+Failed [photos/raw/img.cr2]: Input/output error
+Synchronization complete at 21:33:33  (2 items transferred, 3 skipped, 2 failed)

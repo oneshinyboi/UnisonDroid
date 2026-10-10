@@ -331,7 +331,7 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(
-                    lines = listOf("[FAILED] /storage/emulated/0/Sync/notes/todo.txt: Permission denied"),
+                    lines = listOf("Failed [/storage/emulated/0/Sync/notes/todo.txt]: Permission denied"),
                     exit = 0,
                 ),
             ),
@@ -443,7 +443,7 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(lines = listOf(SUMMARY_LINE), exit = 0),
-                ScriptedProcess(lines = listOf("[CONFLICT] notes/plan.txt", SUMMARY_LINE), exit = 0),
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE), exit = 0),
                 ScriptedProcess(lines = listOf("Error: boom"), exit = 1),
             ),
             profileIds = listOf("prof1", "prof2", "prof3"),
