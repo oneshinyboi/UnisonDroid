@@ -95,13 +95,14 @@ fun ProfilesScreen(
     val requestAccess = rememberAllFilesAccessRequest { hasAccess = it }
     val engine = remember(context) { ServiceLocator.engine(context) }
     val syncState by engine.state.collectAsState()
+    val runPending by engine.runPending.collectAsState()
     ProfilesContent(
         profiles = profiles,
         onOpenProfile = onOpenProfile,
         onStartSync = onStartSync,
         hasLocalAccess = hasAccess,
         onRequestAccess = requestAccess,
-        syncActive = syncState.isActiveRun(),
+        syncActive = syncState.isActiveRun() || runPending,
         onDeleteProfile = { id ->
             scope.launch {
                 repository.delete(id)
@@ -144,7 +145,12 @@ internal fun ProfilesContent(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // A second run enqueued while one is active is silently dropped, so tell the user instead.
-    val warnBusy: () -> Unit = { scope.launch { snackbarHostState.showSnackbar(SYNC_BUSY_MESSAGE) } }
+    val warnBusy: () -> Unit = {
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(SYNC_BUSY_MESSAGE)
+        }
+    }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },

@@ -1002,6 +1002,54 @@ class SyncEngineTest {
         assertEquals(1, h.runner.starts.size)
     }
 
+    @Test
+    fun `runPending is set when a run is requested and cleared once the engine picks it up`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+        assertFalse(h.engine.runPending.value)
+
+        h.engine.beginRun()
+        assertTrue(h.engine.runPending.value, "a requested run must count as pending before it starts")
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertFalse(h.engine.runPending.value, "the engine must clear pending once it takes the run")
+    }
+
+    @Test
+    fun `runPending is cleared when a request is rejected as busy`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val h = harness(
+            scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE), gateAfter = 1, gate = gate)),
+        )
+        val job = launch { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        awaitState(h.engine) { it is SyncState.Syncing }
+
+        h.engine.beginRun()
+        assertTrue(h.engine.runPending.value)
+
+        val second = withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.INTERACTIVE) }
+        assertEquals(SyncOutcome.BUSY, second)
+        assertFalse(h.engine.runPending.value, "a rejected request must not leave a stuck pending flag")
+
+        gate.complete(Unit)
+        withTimeout(10_000) { job.join() }
+    }
+
+    @Test
+    fun `a destructive mirror from the server without confirmation is refused`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+
+        val outcome = withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.MIRROR_FROM_SERVER)
+        }
+
+        assertEquals(SyncOutcome.FAILED, outcome)
+        assertEquals(
+            SyncState.Reason.CONFIRMATION_REQUIRED,
+            (h.engine.state.value as SyncState.Failed).reason,
+        )
+        assertTrue(h.runner.starts.isEmpty())
+    }
+
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =
         withTimeout(10_000) { engine.state.first(predicate) }
 

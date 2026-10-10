@@ -197,6 +197,18 @@ class RunScreenTest {
     }
 
     @Test
+    fun `a syncing diagnostic shows the testing-connection progress label`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.TEST_CONNECTION) }
+        }
+
+        engine.states.value = SyncState.Syncing("p1", listOf("working"), 0.5f)
+        awaitTag(RUN_PROGRESS_TAG)
+
+        compose.onNodeWithText("Testing connection", substring = true).assertExists()
+    }
+
+    @Test
     fun `passes destructive confirmation to the sync run`() {
         compose.setContent {
             UnisonDroidTheme {

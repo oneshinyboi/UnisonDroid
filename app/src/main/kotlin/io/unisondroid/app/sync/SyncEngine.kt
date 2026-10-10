@@ -70,6 +70,16 @@ open class SyncEngine(
     protected val _state = MutableStateFlow<SyncState>(SyncState.Idle)
     open val state: StateFlow<SyncState> = _state.asStateFlow()
 
+    private val _runPending = MutableStateFlow(false)
+
+    /**
+     * True from the moment a manual run is requested until the engine picks it up (or rejects it).
+     * Runs are enqueued to WorkManager before the engine starts them, and a second enqueue for the
+     * same profile is dropped by the unique-work policy, so the UI needs a signal that spans this
+     * window; [state] alone is not yet active then.
+     */
+    open val runPending: StateFlow<Boolean> = _runPending.asStateFlow()
+
     private val syncMutex = Mutex()
 
     @Volatile
@@ -84,7 +94,11 @@ open class SyncEngine(
         variant: SyncVariant = SyncVariant.TWO_WAY,
         confirmed: Boolean = false,
     ): SyncOutcome {
-        if (!syncMutex.tryLock()) return SyncOutcome.BUSY
+        if (!syncMutex.tryLock()) {
+            _runPending.value = false
+            return SyncOutcome.BUSY
+        }
+        _runPending.value = false
         try {
             // Defense in depth: a destructive mirror must be explicitly confirmed by the caller,
             // so a future deep link or programmatic run cannot delete files without the dialog.
@@ -166,6 +180,7 @@ open class SyncEngine(
             is SyncState.Finished, is SyncState.Failed, SyncState.Idle -> _state.value = SyncState.Idle
             else -> Unit
         }
+        _runPending.value = true
     }
 
     // The bundled unison locks each archive via an O_EXCL file named

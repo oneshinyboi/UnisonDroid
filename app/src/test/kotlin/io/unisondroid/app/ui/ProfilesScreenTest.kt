@@ -25,6 +25,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -451,6 +454,62 @@ class ProfilesScreenTest {
         compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
         awaitTag(actionTag("p1", SyncVariant.COPY_TO_SERVER))
         compose.onNodeWithTag(actionTag("p1", SyncVariant.COPY_TO_SERVER)).performClick()
+
+        awaitText(SYNC_BUSY_MESSAGE)
+        assertEquals(null, ran)
+    }
+
+    @Test
+    fun `a requested-but-not-yet-started run blocks a second run`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        engine.beginRun()
+        var ran: Triple<String, SyncVariant, Boolean>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.COPY_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.COPY_TO_SERVER)).performClick()
+
+        awaitText(SYNC_BUSY_MESSAGE)
+        assertEquals(null, ran)
+    }
+
+    @Test
+    fun `confirming a mirror that became busy while the dialog was open is blocked`() {
+        val conflicting = profile(id = "p1", name = "My Server")
+        var syncActive by mutableStateOf(false)
+        var ran: Triple<String, SyncVariant, Boolean>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesContent(
+                    profiles = listOf(conflicting),
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
+                    syncActive = syncActive,
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.MIRROR_TO_SERVER)).performClick()
+        awaitTag(MIRROR_CONFIRM_TAG)
+
+        compose.runOnIdle { syncActive = true }
+        compose.onNodeWithTag(MIRROR_CONFIRM_TAG).performClick()
 
         awaitText(SYNC_BUSY_MESSAGE)
         assertEquals(null, ran)
