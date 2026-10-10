@@ -153,7 +153,7 @@ class OutputParser {
             closeDisplayBlock()
             val action = match.groupValues[2]
             if (action == CONFLICT_ACTION || action == CONFLICT_ACTION_FORCED) {
-                pendingDisplayPath = match.groupValues[4]
+                pendingDisplayPath = plainDisplayPath(match.groupValues[4])
                 pendingSideIndex = 0
             }
             return emptyList()
@@ -193,6 +193,16 @@ class OutputParser {
     private fun closeDisplayBlock() {
         pendingDisplayPath = null
         pendingSideIndex = 0
+    }
+
+    // The recon line appends a move/overwrite suffix after the path
+    // (`uicommon.ml:373-377`), but the later `skipped:` line uses the plain
+    // `Path.toString ri.path1`. Strip that suffix so both land on the same
+    // ConflictRecord key instead of producing two records for one conflict.
+    private fun plainDisplayPath(reconPath: String): String {
+        val withoutOverwrite = OVERWRITE_SUFFIX.replace(reconPath, "")
+        val withoutMovedOut = MOVED_OUT_SUFFIX.replace(withoutOverwrite, "")
+        return MOVED_IN_SUFFIX.replace(withoutMovedOut, "")
     }
 
     // Sides are written into the path-keyed map as soon as they are seen, so the
@@ -245,6 +255,14 @@ class OutputParser {
         // `displayri` recon line: two fixed 8-char replica columns, a 5-char action,
         // then the full relative path (`uitext.ml:419`).
         private val RECON_LINE = Regex("""^(.{8}) (error|[-<=>?M]{5}) (.{8}) {3}(.*?)\s*$""")
+
+        // Move/overwrite suffixes `reconItem2stringList` appends after the path
+        // (`uicommon.ml:373-377`). The `skipped:` line never carries them.
+        private val OVERWRITE_SUFFIX = Regex(""" <will overwrite a [^>]*>$""")
+
+        private val MOVED_OUT_SUFFIX = Regex(""" \(--> new name: .*\)$""")
+
+        private val MOVED_IN_SUFFIX = Regex(""" \(<-- previous name: .*\)$""")
 
         // `details2string`: `<root padded to 12> : <status>  <props>` (`uicommon.ml:306`).
         // The `\s+:` requires whitespace before the colon, so `skipped:`/`failed:` do not match.

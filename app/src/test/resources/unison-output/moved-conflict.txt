@@ -1,0 +1,5 @@
+changed  <-?-> changed    newdir/thing.txt (--> new name: olddir/thing.txt)
+local        : changed file       modified on 2024-01-02 at  3:04:05  size 1234      -rw-r--r--
+host         : changed file       modified on 2024-01-02 at  4:05:06  size 5678      -rw-r--r--
+
+  skipped: newdir/thing.txt (conflicting updates)

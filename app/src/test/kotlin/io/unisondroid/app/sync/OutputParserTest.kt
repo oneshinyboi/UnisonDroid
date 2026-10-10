@@ -381,6 +381,51 @@ class OutputParserTest {
     }
 
     @Test
+    fun `moved conflict merges sides and reason onto one record`() {
+        val conflicts = feedFinalize("moved-conflict.txt").conflicts
+
+        assertEquals(1, conflicts.size)
+        val c = conflicts.single()
+        assertEquals("newdir/thing.txt", c.path)
+        assertEquals(1234L, c.local?.sizeBytes)
+        assertEquals(5678L, c.remote?.sizeBytes)
+        assertEquals("conflicting updates", c.reason)
+    }
+
+    @Test
+    fun `moved conflict with an overwrite warning still merges onto one record`() {
+        val text =
+            "changed  <-?-> changed    newdir/thing.txt (--> new name: olddir/thing.txt)" +
+                " <will overwrite a file in the other replica>\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 11    -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 22    -rw-r--r--\n" +
+                "\n" +
+                "  skipped: newdir/thing.txt (conflicting updates)\n"
+        val conflicts = feedAll(text).first.finalize(0).conflicts
+
+        assertEquals(1, conflicts.size)
+        val c = conflicts.single()
+        assertEquals("newdir/thing.txt", c.path)
+        assertEquals(11L, c.local?.sizeBytes)
+        assertEquals(22L, c.remote?.sizeBytes)
+        assertEquals("conflicting updates", c.reason)
+    }
+
+    @Test
+    fun `path with a literal parenthesis and no move suffix is untouched`() {
+        val text =
+            "changed  <-?-> changed    notes (draft).txt\n" +
+                "local        : changed file       modified on 2024-01-02 at  3:04:05  size 7     -rw-r--r--\n" +
+                "host         : changed file       modified on 2024-01-02 at  4:05:06  size 8     -rw-r--r--\n" +
+                "\n"
+        val c = feedAll(text).first.finalize(0).conflicts.single()
+
+        assertEquals("notes (draft).txt", c.path)
+        assertEquals(7L, c.local?.sizeBytes)
+        assertEquals(8L, c.remote?.sizeBytes)
+    }
+
+    @Test
     fun `failed lines and zero-transfer complete summary finalize counts`() {
         assertEquals(
             SyncSummary(
