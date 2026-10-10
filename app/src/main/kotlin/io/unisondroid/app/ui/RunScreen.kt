@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -70,6 +71,13 @@ fun RunScreen(
     val context = LocalContext.current
     val engine = remember(context) { ServiceLocator.engine(context) }
     val repository = remember(context) { ServiceLocator.profiles(context) }
+    val currentVersion by produceState(
+        initialValue = UnisonInfo.DEFAULT.version,
+        profileId,
+    ) {
+        value = repository.get(profileId)?.unisonVersion?.ifBlank { UnisonInfo.DEFAULT.version }
+            ?: UnisonInfo.DEFAULT.version
+    }
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsState()
     var runKey by remember { mutableStateOf(0) }
@@ -106,6 +114,7 @@ fun RunScreen(
                 runKey++
             }
         },
+        currentVersion = currentVersion,
         modifier = modifier,
     )}
 
@@ -120,6 +129,7 @@ internal fun RunContent(
     onResolveConflicts: () -> Unit = {},
     onRetryWithVersion: (String) -> Unit = {},
     variant: SyncVariant = SyncVariant.TWO_WAY,
+    currentVersion: String = UnisonInfo.DEFAULT.version,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -160,6 +170,7 @@ internal fun RunContent(
                             state = state,
                             onGrantStorageAccess = onGrantStorageAccess,
                             onRetryWithVersion = onRetryWithVersion,
+                            currentVersion = currentVersion,
                             title = if (variant.isDiagnostic) "Connection test failed" else "Sync failed",
                         )
                     }
@@ -300,6 +311,7 @@ private fun FailureCard(
     state: SyncState.Failed,
     onGrantStorageAccess: () -> Unit,
     onRetryWithVersion: (String) -> Unit = {},
+    currentVersion: String = UnisonInfo.DEFAULT.version,
     title: String = "Sync failed",
 ) {
     Card(modifier = Modifier.fillMaxWidth().testTag(RUN_FAILURE_TAG)) {
@@ -326,7 +338,7 @@ private fun FailureCard(
                     text = "The server runs a different Unison version. Try another bundled version:",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                UnisonInfo.BUNDLED.forEach { bundled ->
+                UnisonInfo.BUNDLED.filter { it.version != currentVersion }.forEach { bundled ->
                     OutlinedButton(
                         onClick = { onRetryWithVersion(bundled.version) },
                         modifier = Modifier.testTag(RUN_RETRY_VERSION_TAG),

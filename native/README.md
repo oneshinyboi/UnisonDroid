@@ -56,7 +56,7 @@ Useful environment variables:
 | Variable           | Meaning                                              |
 | ------------------ | ---------------------------------------------------- |
 | `ANDROID_SDK_ROOT` | Android SDK location (default `~/Android/Sdk`)       |
-| `UNISON_VERSION`   | Unison release tag to build (default `v2.53.8`)      |
+| `UNISON_VERSION`   | Unison release tag to build (default: first tag in `native/unison-versions.txt`) |
 | `UNISON_BUILD_DIR` | Scratch/cache directory (default `native/.build`)    |
 | `FORCE=1`          | Rebuild even if the output already exists            |
 | `JOBS`             | Parallel `make` jobs (default: `nproc`)              |
@@ -71,6 +71,10 @@ Other pins are at the top of the script: OCaml `4.14.2`, NDK `29.0.14206865`,
    parity test asserts the two lists agree.
 3. Rebuild every ABI for the new tag (see the loop above). `build-unison.sh`
    names the output `libunison_<ver>.so`, so no script change is needed.
+
+The CI matrix is derived from `native/unison-versions.txt` (the workflow reads
+the file and expands the `unison` matrix from it), so appending the tag is what
+adds the new version to the native build matrix.
 
 ## Copying the libraries into the app
 
@@ -100,7 +104,7 @@ Then build and install the app:
 ./gradlew :app:assembleDebug
 ```
 
-When the binaries are present, `BinaryLocator.locate()` returns
+When the binaries are present, `BinaryLocator.locate(fileName)` returns
 `BinaryStatus.Available` and the About screen lists the bundled versions.
 
 ## OpenSSH (`build-openssh.sh`)

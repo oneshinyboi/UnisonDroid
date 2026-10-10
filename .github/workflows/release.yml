@@ -16,14 +16,30 @@ env:
   OPENSSH_VERSION: "10.2p1"
 
 jobs:
+  versions:
+    name: read bundled versions
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.read.outputs.list }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Read native/unison-versions.txt
+        id: read
+        run: |
+          set -euo pipefail
+          list=$(grep -v '^#' native/unison-versions.txt | grep -v '^[[:space:]]*$' | sed -e 's/[[:space:]]//g' -e 's/.*/"&"/' | paste -sd, -)
+          echo "list=[$list]" >> "$GITHUB_OUTPUT"
+
   native:
     name: native (${{ matrix.abi }}, ${{ matrix.unison }})
     runs-on: ubuntu-latest
+    needs: versions
     strategy:
       fail-fast: false
       matrix:
         abi: [arm64-v8a, x86_64]
-        unison: [v2.54.0, v2.53.8]
+        unison: ${{ fromJSON(needs.versions.outputs.list) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,8 +80,8 @@ jobs:
           for b in libssh.so libssh-keygen.so libssh-keyscan.so; do
             test -f "$d/$b" || { echo "::error::missing $d/$b"; exit 1; }
           done
-          count=$(find "$d" -maxdepth 1 -name 'libunison_*.so' | wc -l)
-          test "$count" -ge 1 || { echo "::error::no libunison_*.so in $d"; exit 1; }
+          v="${{ matrix.unison }}"; v="${v#v}"; v="${v//./_}"
+          test -f "$d/libunison_$v.so" || { echo "::error::missing $d/libunison_$v.so"; exit 1; }
 
       - name: Upload jniLibs (${{ matrix.abi }}, ${{ matrix.unison }})
         uses: actions/upload-artifact@v4

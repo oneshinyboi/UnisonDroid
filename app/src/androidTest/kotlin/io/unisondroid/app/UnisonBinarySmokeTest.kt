@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.BinaryStatus
 import io.unisondroid.app.sync.UnisonInfo
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,9 +32,16 @@ class UnisonBinarySmokeTest {
                     environment()["TMPDIR"] = context.cacheDir.absolutePath
                 }
                 .start()
-            val output = process.inputStream.bufferedReader().readText()
-            process.waitFor(15, TimeUnit.SECONDS)
-            assertTrue("${bundled.fileName} output was: $output", output.contains(bundled.version))
+            val output = StringBuilder()
+            val reader = Thread {
+                process.inputStream.bufferedReader().use { output.append(it.readText()) }
+            }.apply { start() }
+            val finished = process.waitFor(15, TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            reader.join(5_000)
+            assertTrue("${bundled.fileName} did not exit; output was: $output", finished)
+            assertEquals("${bundled.fileName} output was: $output", 0, process.exitValue())
+            assertTrue("${bundled.fileName} output was: $output", output.toString().contains(bundled.version))
         }
     }
 }

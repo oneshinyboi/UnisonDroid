@@ -24,18 +24,13 @@
 set -euo pipefail
 
 # --- Pins -------------------------------------------------------------------
-# Unison release tag for the native server binary. Override with UNISON_VERSION
-# to build another bundled tag (see native/unison-versions.txt). OutputParser
-# mismatch markers and test fixtures are verified against the pinned default.
-UNISON_VERSION="${UNISON_VERSION:-v2.53.8}"
+# Unison release tags are listed in native/unison-versions.txt; the tag is
+# resolved below (from that file, or UNISON_VERSION if set). OutputParser
+# mismatch markers and test fixtures are verified against the newest default.
 OCAML_VERSION=4.14.2
 NDK_VERSION=29.0.14206865
 ANDROID_API=26
 UNISON_REPO=https://github.com/bcpierce00/unison.git
-
-# Derive the packaged file name from the tag: v2.54.0 -> libunison_2_54_0.so
-UNISON_VER="${UNISON_VERSION#v}"
-UNISON_LIB="libunison_${UNISON_VER//./_}.so"
 
 # --- Paths ------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,6 +43,21 @@ NDK="$SDK/ndk/$NDK_VERSION"
 TOOLCHAIN_BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 HOST_OCAML_PREFIX="$WORK_DIR/host-ocaml"
 JOBS="${JOBS:-$(nproc)}"
+
+# Default to the newest bundled tag (first non-comment line of
+# native/unison-versions.txt); override with UNISON_VERSION to build another tag.
+if [ -z "${UNISON_VERSION:-}" ]; then
+  versions_file="$SCRIPT_DIR/unison-versions.txt"
+  if [ -f "$versions_file" ]; then
+    UNISON_VERSION=$(grep -v '^#' "$versions_file" | grep -v '^[[:space:]]*$' | head -n1 | tr -d '[:space:]')
+  else
+    UNISON_VERSION=v2.53.8
+  fi
+fi
+
+# Derive the packaged file name from the tag: v2.54.0 -> libunison_2_54_0.so
+UNISON_VER="${UNISON_VERSION#v}"
+UNISON_LIB="libunison_${UNISON_VER//./_}.so"
 
 log()  { printf '\033[1;34m[build-unison]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[build-unison] error:\033[0m %s\n' "$*" >&2; exit 1; }

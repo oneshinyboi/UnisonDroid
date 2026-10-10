@@ -1,5 +1,6 @@
 package io.unisondroid.app.ui
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -25,6 +26,7 @@ import io.unisondroid.app.sync.SyncOutcome
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncSummary
 import io.unisondroid.app.sync.SyncVariant
+import io.unisondroid.app.sync.UnisonInfo
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -352,6 +354,9 @@ class RunScreenTest {
             }
         }
 
+        compose.onAllNodesWithTag(RUN_RETRY_VERSION_TAG)
+            .assertCountEquals(UnisonInfo.BUNDLED.size - 1)
+        compose.onNodeWithText("Try Unison 2.54.0").assertDoesNotExist()
         compose.onNodeWithText("Try Unison 2.53.8").performClick()
         assertEquals("2.53.8", retried)
     }

@@ -57,9 +57,9 @@ android {
         compose = true
     }
 
-    // libunison.so is a self-contained executable (not a shared library loaded
-    // by the linker), so it must be extracted to nativeLibraryDir where
-    // BinaryLocator looks for it.
+    // The bundled libunison_<version>.so files are self-contained executables
+    // (not shared libraries loaded by the linker), so they must be extracted to
+    // nativeLibraryDir where BinaryLocator looks for them.
     packaging {
         jniLibs {
             useLegacyPackaging = true
