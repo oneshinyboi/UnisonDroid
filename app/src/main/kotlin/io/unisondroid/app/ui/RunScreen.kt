@@ -1,6 +1,9 @@
 package io.unisondroid.app.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,6 +25,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -59,6 +64,7 @@ const val RUN_CONFLICT_ROW = "run-conflict-row"
 const val RUN_FAILED_ROW = "run-failed-row"
 const val RUN_RESOLVE_TAG = "run-resolveConflicts"
 const val RUN_RETRY_VERSION_TAG = "run-retryVersion"
+const val RUN_COPY_LOG_TAG = "run-copyLog"
 
 @Composable
 fun RunScreen(
@@ -134,9 +140,40 @@ internal fun RunContent(
     variant: SyncVariant = SyncVariant.TWO_WAY,
     currentVersion: String = UnisonInfo.DEFAULT.version,
 ) {
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    // The log is only on screen while syncing or after a two-way run finishes, so the
+    // copy action follows the same visibility and copies the same lines.
+    val log = when {
+        state is SyncState.Syncing -> state.log.takeIf { it.isNotEmpty() }
+        state is SyncState.Finished && !variant.isDiagnostic -> state.log.takeIf { it.isNotEmpty() }
+        else -> null
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { TopAppBar(title = { Text(text = variant.title()) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(text = variant.title()) },
+                actions = {
+                    if (log != null) {
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                    as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText("Unison log", log.joinToString("\n")),
+                                )
+                                scope.launch { snackbarHostState.showSnackbar("Log copied") }
+                            },
+                            modifier = Modifier.testTag(RUN_COPY_LOG_TAG),
+                        ) { Text(text = "Copy log") }
+                    }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier

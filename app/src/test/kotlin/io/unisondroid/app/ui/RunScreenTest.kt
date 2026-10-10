@@ -1,6 +1,8 @@
 package io.unisondroid.app.ui
 
 import androidx.compose.ui.test.assertCountEquals
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -410,6 +412,62 @@ class RunScreenTest {
             compose.onAllNodesWithText("Try Unison 2.54.0").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Try Unison 2.53.8").assertDoesNotExist()
+    }
+
+    @Test
+    fun `copy log action copies the on-screen log chronologically`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                RunContent(
+                    state = SyncState.Syncing(
+                        profileId = "p1",
+                        log = listOf("Looking for changes", "Reconciling changes", "Transferring file1"),
+                        progress = 0.5f,
+                    ),
+                    onCancel = {},
+                    onHostKeyDecision = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(RUN_COPY_LOG_TAG).assertExists()
+        compose.onNodeWithTag(RUN_COPY_LOG_TAG).performClick()
+
+        val clipboard = RuntimeEnvironment.getApplication()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val copied = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+        assertEquals(
+            "Looking for changes\nReconciling changes\nTransferring file1",
+            copied,
+        )
+    }
+
+    @Test
+    fun `copy log action is present for a finished run with a log`() {
+        compose.setContent {
+            UnisonDroidTheme {
+                RunContent(
+                    state = SyncState.Finished(
+                        profileId = "p1",
+                        summary = SyncSummary(transferred = 1, conflicts = emptyList(), failed = emptyList()),
+                        log = listOf("Contacting server...", "Nothing to do"),
+                    ),
+                    onCancel = {},
+                    onHostKeyDecision = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(RUN_COPY_LOG_TAG).assertExists()
+    }
+
+    @Test
+    fun `copy log action is hidden when there is no log`() {
+        compose.setContent {
+            UnisonDroidTheme { RunContent(state = SyncState.Idle, onCancel = {}, onHostKeyDecision = {}) }
+        }
+
+        compose.onNodeWithTag(RUN_COPY_LOG_TAG).assertDoesNotExist()
     }
 
     private fun awaitTag(tag: String) {
