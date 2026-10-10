@@ -53,6 +53,7 @@ const val PROFILES_ABOUT_ACTION_TAG = "profiles-about-action"
 const val PROFILES_SETTINGS_ACTION_TAG = "profiles-settings-action"
 const val PROFILE_EDIT_PREFIX = "profileEdit-"
 const val PROFILE_DELETE_PREFIX = "profileDelete-"
+const val CONFLICTS_COUNT_PREFIX = "profileConflicts-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
 
 private val LAST_SYNC_FORMATTER: DateTimeFormatter =
@@ -218,6 +219,13 @@ private fun ProfileRow(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag(LAST_SYNC_TAG),
                 )
+                if (profile.lastConflicts.isNotEmpty()) {
+                    Text(
+                        text = "${profile.lastConflicts.size} conflicts",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("$CONFLICTS_COUNT_PREFIX${profile.id}"),
+                    )
+                }
             }
         },
         trailingContent = {

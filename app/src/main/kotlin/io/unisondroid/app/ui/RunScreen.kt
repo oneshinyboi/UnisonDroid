@@ -51,9 +51,14 @@ const val RUN_ENGINE_MISSING_TAG = "run-engineMissing"
 const val RUN_HOSTKEY_DIALOG_TAG = "run-hostKeyDialog"
 const val RUN_CONFLICT_ROW = "run-conflict-row"
 const val RUN_FAILED_ROW = "run-failed-row"
+const val RUN_RESOLVE_TAG = "run-resolveConflicts"
 
 @Composable
-fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
+fun RunScreen(
+    profileId: String,
+    onResolveConflicts: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val engine = remember(context) { ServiceLocator.engine(context) }
     val scope = rememberCoroutineScope()
@@ -82,6 +87,7 @@ fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
         onCancel = { engine.cancel() },
         onHostKeyDecision = { approve -> scope.launch { engine.respondHostKey(approve) } },
         onGrantStorageAccess = requestStorageAccess,
+        onResolveConflicts = onResolveConflicts,
         modifier = modifier,
     )}
 
@@ -93,6 +99,7 @@ internal fun RunContent(
     onHostKeyDecision: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onGrantStorageAccess: () -> Unit = {},
+    onResolveConflicts: () -> Unit = {},
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -108,7 +115,7 @@ internal fun RunContent(
                 SyncState.Idle -> StatusLine("Starting sync…")
                 is SyncState.Connecting -> StatusLine("Connecting to the server…")
                 is SyncState.Syncing -> SyncingBody(state = state, onCancel = onCancel)
-                is SyncState.Finished -> SummaryCard(state)
+                is SyncState.Finished -> SummaryCard(state, onResolveConflicts)
                 is SyncState.Failed ->
                     if (state.reason == SyncState.Reason.BINARY_MISSING) {
                         EngineMissingCard(state.detail)
@@ -166,7 +173,7 @@ private fun ColumnScope.SyncingBody(state: SyncState.Syncing, onCancel: () -> Un
 }
 
 @Composable
-private fun SummaryCard(state: SyncState.Finished) {
+private fun SummaryCard(state: SyncState.Finished, onResolveConflicts: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().testTag(RUN_SUMMARY_TAG)) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -190,6 +197,12 @@ private fun SummaryCard(state: SyncState.Finished) {
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.testTag(RUN_FAILED_ROW),
                 )
+            }
+            if (state.summary.conflicts.any { it.resolvable }) {
+                OutlinedButton(
+                    onClick = onResolveConflicts,
+                    modifier = Modifier.testTag(RUN_RESOLVE_TAG),
+                ) { Text(text = "Resolve conflicts") }
             }
         }
     }
@@ -246,7 +259,7 @@ private fun EngineMissingCard(detail: String) {
 }
 
 @Composable
-private fun HostKeyDialog(fingerprint: String, onDecision: (Boolean) -> Unit) {
+internal fun HostKeyDialog(fingerprint: String, onDecision: (Boolean) -> Unit) {
     AlertDialog(
         modifier = Modifier.testTag(RUN_HOSTKEY_DIALOG_TAG),
         onDismissRequest = {},

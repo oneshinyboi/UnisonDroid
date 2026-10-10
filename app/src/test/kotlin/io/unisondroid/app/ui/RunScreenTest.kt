@@ -104,6 +104,49 @@ class RunScreenTest {
     }
 
     @Test
+    fun `finished summary with a resolvable conflict shows the resolve button and invokes it`() {
+        var resolved = false
+        compose.setContent {
+            UnisonDroidTheme {
+                RunScreen(profileId = "p1", onResolveConflicts = { resolved = true })
+            }
+        }
+
+        engine.states.value = SyncState.Finished(
+            profileId = "p1",
+            summary = SyncSummary(
+                transferred = 1,
+                conflicts = listOf(
+                    ConflictRecord("a.txt", "conflicting updates", resolvable = true),
+                ),
+                failed = emptyList(),
+            ),
+        )
+        awaitTag(RUN_RESOLVE_TAG)
+
+        compose.onNodeWithTag(RUN_RESOLVE_TAG).assertExists()
+        compose.onNodeWithTag(RUN_RESOLVE_TAG).performClick()
+        assertTrue("the resolve button must be forwarded to the caller", resolved)
+    }
+
+    @Test
+    fun `finished summary without resolvable conflicts hides the resolve button`() {
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
+
+        engine.states.value = SyncState.Finished(
+            profileId = "p1",
+            summary = SyncSummary(
+                transferred = 1,
+                conflicts = listOf(ConflictRecord("a.txt", "atomic directory", resolvable = false)),
+                failed = emptyList(),
+            ),
+        )
+        awaitTag(RUN_SUMMARY_TAG)
+
+        compose.onNodeWithTag(RUN_RESOLVE_TAG).assertDoesNotExist()
+    }
+
+    @Test
     fun `awaiting host key shows fingerprint dialog and wires approve and deny`() {
         compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
 

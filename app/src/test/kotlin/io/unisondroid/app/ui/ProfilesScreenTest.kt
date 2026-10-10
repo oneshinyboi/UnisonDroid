@@ -4,6 +4,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.AppSettings
+import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
@@ -23,6 +24,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -170,6 +172,32 @@ class ProfilesScreenTest {
                 .singleOrNull()
                 ?.state == WorkInfo.State.CANCELLED
         }
+    }
+
+    @Test
+    fun `profile row shows a conflicts count when the last run had conflicts`() {
+        runBlocking {
+            repository.save(
+                profile(id = "p1", name = "My Server").copy(
+                    lastConflicts = listOf(
+                        ConflictRecord("a.txt", "conflicting updates"),
+                        ConflictRecord("b.txt", "atomic directory"),
+                    ),
+                ),
+            )
+        }
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(onOpenProfile = {}, onStartSync = {})
+            }
+        }
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("2 conflicts", substring = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("2 conflicts", substring = true).assertExists()
     }
 
     @Test

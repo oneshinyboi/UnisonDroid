@@ -12,6 +12,7 @@ object Routes {
     const val PROFILES = "profiles"
     const val EDITOR = "editor/{id}"
     const val RUN = "run/{id}"
+    const val RESOLVE = "resolve/{id}"
     const val KEYS = "keys"
     const val ABOUT = "about"
     const val SETTINGS = "settings"
@@ -21,6 +22,8 @@ object Routes {
     fun editor(id: String?): String = if (id.isNullOrEmpty()) EDITOR_NEW else "editor/$id"
 
     fun run(id: String): String = "run/$id"
+
+    fun resolve(id: String): String = "resolve/$id"
 }
 
 @Composable
@@ -55,7 +58,20 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
             route = Routes.RUN,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { entry ->
-            RunScreen(profileId = entry.arguments?.getString("id").orEmpty())
+            val profileId = entry.arguments?.getString("id").orEmpty()
+            RunScreen(
+                profileId = profileId,
+                onResolveConflicts = { navController.navigate(Routes.resolve(profileId)) },
+            )
+        }
+        composable(
+            route = Routes.RESOLVE,
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+        ) { entry ->
+            ResolveConflictsScreen(
+                profileId = entry.arguments?.getString("id").orEmpty(),
+                onDone = { navController.popBackStack() },
+            )
         }
         composable(Routes.KEYS) { KeysScreen() }
         composable(Routes.ABOUT) { AboutScreen() }
