@@ -1,6 +1,7 @@
 package io.unisondroid.app.sync
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -57,5 +58,35 @@ class ProcessSshToolTest {
         assertEquals("ssh-ed25519", entries[0].keyType)
         assertEquals("SHA256:edfp", entries[0].fingerprint)
         assertEquals("ssh-rsa", entries[1].keyType)
+    }
+
+    @Test
+    fun `isHostKnown uses bracketed host colon port and reports found`() {
+        val keygen = script(
+            "find-keygen",
+            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = '[veryshiny.net]:2222' || exit 8; echo found; exit 0",
+        )
+        val tool = ProcessSshTool(keygen, keygen, dir)
+
+        assertTrue(tool.isHostKnown("veryshiny.net", 2222, File(dir, "known_hosts")))
+    }
+
+    @Test
+    fun `isHostKnown uses the bare host on the default port`() {
+        val keygen = script(
+            "find-keygen-22",
+            "test \"\$1\" = '-F' || exit 9; test \"\$2\" = 'veryshiny.net' || exit 8; echo found; exit 0",
+        )
+        val tool = ProcessSshTool(keygen, keygen, dir)
+
+        assertTrue(tool.isHostKnown("veryshiny.net", 22, File(dir, "known_hosts")))
+    }
+
+    @Test
+    fun `isHostKnown reports a host that is not found`() {
+        val keygen = script("miss-keygen", "exit 1")
+        val tool = ProcessSshTool(keygen, keygen, dir)
+
+        assertFalse(tool.isHostKnown("veryshiny.net", 2222, File(dir, "known_hosts")))
     }
 }

@@ -24,6 +24,8 @@ interface SshTool {
     fun derivePublicKey(pem: String): String
 
     fun scanHostKeys(host: String, port: Int): List<HostKeyEntry>
+
+    fun isHostKnown(host: String, port: Int, knownHosts: File): Boolean
 }
 
 /**
@@ -89,6 +91,16 @@ class ProcessSshTool(
             }
             .toList()
     }
+
+    override fun isHostKnown(host: String, port: Int, knownHosts: File): Boolean {
+        val process = ProcessBuilder(keygen.absolutePath, "-F", hostSpec(host, port), "-f", knownHosts.absolutePath)
+            .redirectInput(ProcessBuilder.Redirect.from(File(DEV_NULL)))
+            .start()
+        drain(process, "ssh-keygen", "querying known_hosts")
+        return process.exitValue() == 0
+    }
+
+    private fun hostSpec(host: String, port: Int): String = if (port == 22) host else "[$host]:$port"
 
     private fun fingerprint(knownHostsLine: String): String {
         val process = ProcessBuilder(listOf(keygen.absolutePath, "-lf", "-")).start()
