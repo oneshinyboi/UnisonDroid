@@ -384,6 +384,34 @@ class RunScreenTest {
         assertTrue("retry must re-trigger the run", engine.beginRunCount >= 2)
     }
 
+    @Test
+    fun `retry refreshes the offered versions on a repeated mismatch`() {
+        val dir = java.nio.file.Files.createTempDirectory("run-retry-refresh").toFile()
+        val repo = ProfileRepository(JsonStore(dir))
+        val profile = Profile(
+            id = "p1", name = "P", localRoot = "/a", remoteRoot = "/b",
+            host = "h", user = "u", sshKeyId = "k",
+        )
+        runBlocking { repo.save(profile) }
+        ServiceLocator.profilesProvider = { repo }
+
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
+        engine.states.value = SyncState.Failed("p1", SyncState.Reason.VERSION, "different versions of Unison")
+        awaitText("Try Unison 2.53.8")
+
+        compose.onNodeWithText("Try Unison 2.53.8").performClick()
+        compose.waitUntil(5_000) { runBlocking { repo.get("p1")?.unisonVersion } == "2.53.8" }
+        // Let the retry's re-run start (beginRun resets to Idle) before simulating the next failure.
+        compose.waitUntil(5_000) { engine.beginRunCount >= 2 }
+
+        // A second mismatch after the retry: the now in-use 2.53.8 must not be offered again.
+        engine.states.value = SyncState.Failed("p1", SyncState.Reason.VERSION, "different versions of Unison")
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Try Unison 2.54.0").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Try Unison 2.53.8").assertDoesNotExist()
+    }
+
     private fun awaitTag(tag: String) {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()

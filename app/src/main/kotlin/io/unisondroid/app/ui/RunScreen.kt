@@ -71,16 +71,19 @@ fun RunScreen(
     val context = LocalContext.current
     val engine = remember(context) { ServiceLocator.engine(context) }
     val repository = remember(context) { ServiceLocator.profiles(context) }
+    // Bumped by the retry action; also keys currentVersion below so the offered
+    // versions refresh after a retry rewrites the profile's selected version.
+    var runKey by remember { mutableStateOf(0) }
     val currentVersion by produceState(
         initialValue = UnisonInfo.DEFAULT.version,
         profileId,
+        runKey,
     ) {
         value = repository.get(profileId)?.unisonVersion?.ifBlank { UnisonInfo.DEFAULT.version }
             ?: UnisonInfo.DEFAULT.version
     }
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsState()
-    var runKey by remember { mutableStateOf(0) }
 
     LaunchedEffect(profileId, variant, confirmed, runKey) {
         engine.beginRun()
