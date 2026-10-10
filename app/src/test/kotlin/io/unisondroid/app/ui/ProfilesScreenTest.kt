@@ -32,6 +32,9 @@ import androidx.compose.ui.test.performScrollTo
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import org.junit.Assert.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -83,7 +86,15 @@ class ProfilesScreenTest {
 
         compose.onNodeWithText("My Server").assertExists()
         compose.onNodeWithText("OK").assertExists()
-        compose.onNodeWithText("Last sync: 2023-11-14 22:13").assertExists()
+        compose.onNodeWithText(expectedLastSyncLabel(1_700_000_000_000L)).assertExists()
+    }
+
+    @Test
+    fun `last sync label uses the local time zone`() {
+        val at = 1_700_000_000_000L
+
+        assertEquals(expectedLastSyncLabel(at), lastSyncLabel(at))
+        assertEquals("Never synced", lastSyncLabel(null))
     }
 
     @Test
@@ -279,6 +290,11 @@ class ProfilesScreenTest {
         }
     }
 
+    private fun expectedLastSyncLabel(at: Long): String =
+        "Last sync: " + LOCAL_TIME_FORMATTER.format(
+            Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()),
+        )
+
     private fun profile(id: String, name: String): Profile = Profile(
         id = id,
         name = name,
@@ -293,5 +309,6 @@ class ProfilesScreenTest {
 
     private companion object {
         const val GETTING_STARTED_HINT = "set up Unison"
+        val LOCAL_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     }
 }

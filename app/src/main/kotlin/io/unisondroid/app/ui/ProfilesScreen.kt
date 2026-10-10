@@ -42,7 +42,7 @@ import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.ui.components.StatusChip
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 const val GETTING_STARTED_TAG = "gettingStartedCard"
@@ -58,7 +58,7 @@ const val CONFLICTS_COUNT_PREFIX = "profileConflicts-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
 
 private val LAST_SYNC_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC)
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 internal fun lastSyncLabel(at: Long?): String =
     if (at == null) "Never synced" else "Last sync: " + LAST_SYNC_FORMATTER.format(Instant.ofEpochMilli(at))
