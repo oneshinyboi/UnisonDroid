@@ -2,6 +2,7 @@ package io.unisondroid.app.sync
 
 import io.unisondroid.app.data.ConflictPolicy
 import io.unisondroid.app.data.ConflictRecord
+import io.unisondroid.app.data.FailedRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -407,7 +408,7 @@ class SyncEngineTest {
     @Test
     fun `private key file is deleted even when the sync fails`() = runTest {
         val h = harness(
-            scripts = listOf(ScriptedProcess(lines = listOf("Error: boom"), exit = 1)),
+            scripts = listOf(ScriptedProcess(lines = listOf("Error: boom"), exit = 3)),
         )
 
         withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
@@ -451,8 +452,8 @@ class SyncEngineTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(lines = listOf(SUMMARY_LINE), exit = 0),
-                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE), exit = 0),
-                ScriptedProcess(lines = listOf("Error: boom"), exit = 1),
+                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE), exit = 1),
+                ScriptedProcess(lines = listOf("Error: boom"), exit = 3),
             ),
             profileIds = listOf("prof1", "prof2", "prof3"),
         )
@@ -500,14 +501,65 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `exit-one conflict run finishes WARNINGS and persists the conflict`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "  skipped: notes/plan.txt (conflicting updates)",
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 1 skipped, 0 failed)",
+                    ),
+                    exit = 1,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            finished.summary.conflicts,
+        )
+        assertEquals(SyncResult.WARNINGS, h.repo.get("prof1")?.lastResult)
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+        )
+        assertEquals(FIXED_NOW_MILLIS, h.repo.get("prof1")?.lastSyncedAt)
+    }
+
+    @Test
+    fun `exit-two failure run finishes FAILED and persists the failure`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf(
+                        "  failed: docs/report.pdf",
+                        "Synchronization incomplete at 21:33:33  (0 items transferred, 0 skipped, 1 failed)",
+                    ),
+                    exit = 2,
+                ),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertEquals(listOf(FailedRecord("docs/report.pdf", "")), finished.summary.failed)
+        assertEquals(SyncResult.FAILED, h.repo.get("prof1")?.lastResult)
+        assertTrue(h.repo.get("prof1")?.lastConflicts.orEmpty().isEmpty())
+    }
+
+    @Test
     fun `a failing run keeps the previous lastConflicts`() = runTest {
         val h = harness(
             scripts = listOf(
                 ScriptedProcess(
                     lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
-                    exit = 0,
+                    exit = 1,
                 ),
-                ScriptedProcess(lines = listOf("Error: boom"), exit = 1),
+                ScriptedProcess(lines = listOf("Error: boom"), exit = 3),
             ),
         )
 
@@ -531,8 +583,11 @@ class SyncEngineTest {
         val prfsAtStart = mutableListOf<String>()
         val h = harness(
             scripts = listOf(
-                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
-                ScriptedProcess(lines = listOf(SUMMARY_LINE)),
+                ScriptedProcess(
+                    lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
+                    exit = 1,
+                ),
+                ScriptedProcess(lines = listOf(SUMMARY_LINE), exit = 0),
             ),
             onStart = { _, _ -> prfsAtStart += File(unisonDir, "prof1.prf").readText() },
         )
@@ -560,16 +615,25 @@ class SyncEngineTest {
     fun `resolve run keeps unresolved conflicts`() = runTest {
         val h = harness(
             scripts = listOf(
-                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
-                ScriptedProcess(lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE)),
+                ScriptedProcess(
+                    lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
+                    exit = 1,
+                ),
+                ScriptedProcess(
+                    lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
+                    exit = 1,
+                ),
             ),
         )
 
         withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
-        withTimeout(10_000) {
+        val outcome = withTimeout(10_000) {
             h.engine.resolveConflicts("prof1", mapOf("notes/plan.txt" to Resolution.SKIP))
         }
 
+        // A resolve run that still skips the conflict exits 1, but it is a
+        // completed run (R13): the path stays listed rather than being dropped.
+        assertEquals(SyncOutcome.COMPLETED, outcome)
         assertEquals(
             listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
             h.repo.get("prof1")?.lastConflicts,

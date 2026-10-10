@@ -275,17 +275,20 @@ open class SyncEngine(
                     failSync(profileId, p, SyncState.Reason.LOCAL_PERMISSIONS, permissionDenied!!)
                     return SyncOutcome.FAILED
                 }
-                exit != 0 -> {
+                // Exit codes (uicommon.ml): 0 = okay, 1 = some items skipped
+                // (conflicts/problems, no failure), 2 = some non-fatal failure,
+                // 3 = fatal. Skipping a conflict is normal, so 0-2 are all a
+                // completed run; the summary decides OK/WARNINGS/FAILED.
+                exit >= FATAL_EXIT_CODE -> {
                     failSync(profileId, p, SyncState.Reason.EXIT, logTail(log))
                     return SyncOutcome.FAILED
                 }
                 else -> {
-                    val result =
-                        if (summary.failed.isEmpty() && summary.conflicts.isEmpty()) {
-                            SyncResult.OK
-                        } else {
-                            SyncResult.WARNINGS
-                        }
+                    val result = when {
+                        summary.failed.isNotEmpty() -> SyncResult.FAILED
+                        summary.conflicts.isNotEmpty() -> SyncResult.WARNINGS
+                        else -> SyncResult.OK
+                    }
                     profiles.save(
                         p.copy(
                             lastSyncedAt = clock.millis(),
@@ -375,6 +378,7 @@ open class SyncEngine(
         const val DETAIL_TAIL_LINES = 20
         const val HOST_KEY_DECISION_TIMEOUT_MS = 300_000L
         const val LINE_FEED = "\n"
+        const val FATAL_EXIT_CODE = 3
         const val AUTH_MARKER = "Permission denied (publickey"
         const val HOST_KEY_MARKER = "Host key verification failed"
         const val LOST_CONNECTION_MARKER = "Lost connection with the server"
