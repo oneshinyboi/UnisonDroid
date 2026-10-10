@@ -148,7 +148,7 @@ class OutputParserTest {
     }
 
     @Test
-    fun `real unison header mismatch banner yields VersionMismatch not FailedItem`() {
+    fun `real unison header mismatch banner yields VersionMismatch`() {
         val (_, events) = feedAll(fixture("version-mismatch.txt"))
 
         assertEquals(

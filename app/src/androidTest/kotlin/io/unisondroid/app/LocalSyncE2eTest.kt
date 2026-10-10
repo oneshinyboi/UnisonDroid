@@ -8,8 +8,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.BinaryStatus
+import io.unisondroid.app.sync.CONFLICT_REASONS
+import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.PrfGenerator
 import io.unisondroid.app.sync.SshCommand
+import io.unisondroid.app.sync.SyncSummary
 import io.unisondroid.app.ui.hasAllFilesAccess
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -180,6 +183,67 @@ class LocalSyncE2eTest {
         )
     }
 
+    @Test
+    fun localSync_reportsConflict_thenResolvesTowardSecondRoot() {
+        val binary = locateBinary()
+        val base = newBaseDir()
+        val rootA = File(base, "a").apply { mkdirs() }
+        val rootB = File(base, "b").apply { mkdirs() }
+        val profileDir = File(base, "unison").apply { mkdirs() }
+        val generated = writeGeneratedProfile(profileDir, PROFILE, rootA, rootB)
+
+        // The same relative path with different content in each replica. With no
+        // archive Unison sees a conflict and, in -batch mode, skips it: both copies
+        // are left in place and the conflict is reported on stdout.
+        val conflictPath = "conflict.txt"
+        val contentA = "content from A"
+        val contentB = "content from B is longer"
+        File(rootA, conflictPath).writeText(contentA)
+        File(rootB, conflictPath).writeText(contentB)
+
+        val conflictRun = runUnison(binary, profileDir)
+        val conflicts = parseSummary(conflictRun.output).conflicts
+        val conflict = conflicts.singleOrNull { it.path == conflictPath }
+            ?: error(
+                "expected a conflict record for '$conflictPath', got $conflicts " +
+                    "(exit=${conflictRun.exit})\n${conflictRun.output}",
+            )
+        assertTrue(
+            "the reason must be one Unison reports for a real conflict, got '${conflict.reason}'",
+            conflict.reason in CONFLICT_REASONS,
+        )
+        assertTrue("a real conflict must be resolvable", conflict.resolvable)
+        // The per-side metadata is parsed from the display block Unison prints
+        // before the `skipped:` line. Sizes are order-independent here.
+        assertEquals(
+            "both sides' sizes must parse from the display block",
+            setOf(contentA.length.toLong(), contentB.length.toLong()),
+            setOf(conflict.local?.sizeBytes, conflict.remote?.sizeBytes),
+        )
+        assertEquals(contentA, File(rootA, conflictPath).readText())
+        assertEquals(contentB, File(rootB, conflictPath).readText())
+
+        // Resolve the conflict toward the second root with a scoped preferpartial
+        // preference (the same shape ConflictResolver emits for KEEP_REMOTE).
+        File(profileDir, "$PROFILE.prf").writeText(
+            generated + "preferpartial = Path $conflictPath -> ${rootB.absolutePath}\n",
+        )
+
+        val resolveRun = runUnison(binary, profileDir)
+        assertEquals("resolve run failed:\n${resolveRun.output}", 0, resolveRun.exit)
+        assertEquals(
+            "rootA must take rootB's content once the conflict is resolved",
+            contentB,
+            File(rootA, conflictPath).readText(),
+        )
+        assertEquals("rootB must keep its content", contentB, File(rootB, conflictPath).readText())
+        val remaining = parseSummary(resolveRun.output).conflicts
+        assertTrue(
+            "the resolved path must no longer be a conflict, got $remaining",
+            remaining.none { it.path == conflictPath },
+        )
+    }
+
     private fun locateBinary(): File {
         val nativeDir = File(InstrumentationRegistry.getInstrumentation().targetContext.applicationInfo.nativeLibraryDir)
         val status = BinaryLocator(nativeDir).locate()
@@ -242,6 +306,12 @@ class LocalSyncE2eTest {
             error("unison timed out:\n$output")
         }
         return RunResult(process.exitValue(), output)
+    }
+
+    private fun parseSummary(output: String): SyncSummary {
+        val parser = OutputParser()
+        parser.feed(output)
+        return parser.finalize(0)
     }
 
     private fun snapshot(root: File): Map<String, String> {
