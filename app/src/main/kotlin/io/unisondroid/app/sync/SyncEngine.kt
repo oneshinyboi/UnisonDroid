@@ -249,8 +249,19 @@ open class SyncEngine(
                     return SyncOutcome.FAILED
                 }
                 else -> {
-                    val result = if (summary.failed == 0 && summary.conflicts == 0) SyncResult.OK else SyncResult.WARNINGS
-                    profiles.save(p.copy(lastSyncedAt = clock.millis(), lastResult = result))
+                    val result =
+                        if (summary.failed.isEmpty() && summary.conflicts.isEmpty()) {
+                            SyncResult.OK
+                        } else {
+                            SyncResult.WARNINGS
+                        }
+                    profiles.save(
+                        p.copy(
+                            lastSyncedAt = clock.millis(),
+                            lastResult = result,
+                            lastConflicts = summary.conflicts,
+                        ),
+                    )
                     success = true
                     _state.value = SyncState.Finished(profileId, summary)
                     return SyncOutcome.COMPLETED

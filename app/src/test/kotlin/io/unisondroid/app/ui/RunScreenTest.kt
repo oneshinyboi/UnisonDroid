@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
+import io.unisondroid.app.data.ConflictRecord
+import io.unisondroid.app.data.FailedRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -84,13 +86,21 @@ class RunScreenTest {
 
         engine.states.value = SyncState.Finished(
             profileId = "p1",
-            summary = SyncSummary(transferred = 3, failed = 1, conflicts = 2),
+            summary = SyncSummary(
+                transferred = 3,
+                conflicts = listOf(ConflictRecord("a.txt", "conflicting updates")),
+                failed = listOf(FailedRecord("b.pdf", "boom")),
+            ),
         )
         awaitTag(RUN_SUMMARY_TAG)
 
         compose.onNodeWithText("3 transferred", substring = true).assertExists()
-        compose.onNodeWithText("1 failed", substring = true).assertExists()
-        compose.onNodeWithText("2 conflicts", substring = true).assertExists()
+        compose.onNodeWithTag(RUN_CONFLICT_ROW).assertExists()
+        compose.onNodeWithText("a.txt", substring = true).assertExists()
+        compose.onNodeWithText("conflicting updates", substring = true).assertExists()
+        compose.onNodeWithTag(RUN_FAILED_ROW).assertExists()
+        compose.onNodeWithText("b.pdf", substring = true).assertExists()
+        compose.onNodeWithText("boom", substring = true).assertExists()
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -91,7 +92,10 @@ class SyncEngineTest {
 
         val finished = h.engine.state.value as SyncState.Finished
         assertEquals("prof1", finished.profileId)
-        assertEquals(SyncSummary(transferred = 2, failed = 0, conflicts = 0), finished.summary)
+        assertEquals(
+            SyncSummary(transferred = 2, conflicts = emptyList(), failed = emptyList()),
+            finished.summary,
+        )
         assertFalse(h.runner.processes.single().killed)
         assertTrue(keyExistedAtRunnerStart, "the private key file must exist while unison runs")
         assertFalse(File(sshHome, h.keyId).exists(), "the private key file must be deleted after the sync")
@@ -435,7 +439,10 @@ class SyncEngineTest {
 
         gate.complete(Unit)
         withTimeout(10_000) { job.join() }
-        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 0), (h.engine.state.value as SyncState.Finished).summary)
+        assertEquals(
+            SyncSummary(transferred = 0, conflicts = emptyList(), failed = emptyList()),
+            (h.engine.state.value as SyncState.Finished).summary,
+        )
     }
 
     @Test
@@ -457,6 +464,65 @@ class SyncEngineTest {
         assertEquals(SyncResult.WARNINGS, h.repo.get("prof2")?.lastResult)
         assertEquals(SyncResult.FAILED, h.repo.get("prof3")?.lastResult)
         assertEquals(FIXED_NOW_MILLIS, h.repo.get("prof1")?.lastSyncedAt)
+    }
+
+    @Test
+    fun `conflicts are carried in the summary and persisted as lastConflicts`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
+                    exit = 0,
+                ),
+                ScriptedProcess(lines = listOf(SUMMARY_LINE), exit = 0),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        val finished = h.engine.state.value as SyncState.Finished
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            finished.summary.conflicts,
+        )
+        assertEquals(SyncResult.WARNINGS, h.repo.get("prof1")?.lastResult)
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof2", SyncMode.INTERACTIVE) }
+        val clean = h.engine.state.value as SyncState.Finished
+        assertTrue(clean.summary.conflicts.isEmpty())
+        assertTrue(clean.summary.failed.isEmpty())
+        assertEquals(SyncResult.OK, h.repo.get("prof2")?.lastResult)
+        assertTrue(h.repo.get("prof2")?.lastConflicts.orEmpty().isEmpty(), "a clean run must clear lastConflicts")
+    }
+
+    @Test
+    fun `a failing run keeps the previous lastConflicts`() = runTest {
+        val h = harness(
+            scripts = listOf(
+                ScriptedProcess(
+                    lines = listOf("  skipped: notes/plan.txt (conflicting updates)", SUMMARY_LINE),
+                    exit = 0,
+                ),
+                ScriptedProcess(lines = listOf("Error: boom"), exit = 1),
+            ),
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+        )
+
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+        assertTrue(h.engine.state.value is SyncState.Failed)
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+            h.repo.get("prof1")?.lastConflicts,
+            "a failed run must not clear the earlier conflicts",
+        )
     }
 
     private suspend fun awaitState(engine: SyncEngine, predicate: (SyncState) -> Boolean): SyncState =

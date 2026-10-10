@@ -49,6 +49,8 @@ const val RUN_SUMMARY_TAG = "run-summary"
 const val RUN_FAILURE_TAG = "run-failure"
 const val RUN_ENGINE_MISSING_TAG = "run-engineMissing"
 const val RUN_HOSTKEY_DIALOG_TAG = "run-hostKeyDialog"
+const val RUN_CONFLICT_ROW = "run-conflict-row"
+const val RUN_FAILED_ROW = "run-failed-row"
 
 @Composable
 fun RunScreen(profileId: String, modifier: Modifier = Modifier) {
@@ -175,17 +177,26 @@ private fun SummaryCard(state: SyncState.Finished) {
                 text = "${state.summary.transferred} transferred",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text(
-                text = "${state.summary.failed} failed",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "${state.summary.conflicts} conflicts",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            state.summary.conflicts.forEach { conflict ->
+                Text(
+                    text = detailLine(conflict.path, conflict.reason),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag(RUN_CONFLICT_ROW),
+                )
+            }
+            state.summary.failed.forEach { failure ->
+                Text(
+                    text = detailLine(failure.path, failure.message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag(RUN_FAILED_ROW),
+                )
+            }
         }
     }
 }
+
+private fun detailLine(path: String, detail: String): String =
+    if (detail.isBlank()) path else "$path — $detail"
 
 @Composable
 private fun FailureCard(state: SyncState.Failed, onGrantStorageAccess: () -> Unit) {

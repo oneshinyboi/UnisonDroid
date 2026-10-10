@@ -82,5 +82,7 @@ class ProfileRepositoryTest {
 
         assertFalse(loaded.autoSyncEnabled)
         assertEquals(60, loaded.autoSyncIntervalMinutes)
+        assertEquals(ConflictPolicy.SKIP, loaded.conflictPolicy)
+        assertTrue(loaded.lastConflicts.isEmpty())
     }
 }

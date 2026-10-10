@@ -1,11 +1,10 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.ConflictRecord
+import io.unisondroid.app.data.FailedRecord
+
 sealed interface SyncEvent {
     data class Progress(val fraction: Float, val label: String) : SyncEvent
-
-    data class Conflict(val path: String) : SyncEvent
-
-    data class FailedItem(val path: String, val message: String) : SyncEvent
 
     data class VersionMismatch(val detail: String) : SyncEvent
 
@@ -14,7 +13,11 @@ sealed interface SyncEvent {
     data class Fatal(val message: String) : SyncEvent
 }
 
-data class SyncSummary(val transferred: Int, val failed: Int, val conflicts: Int)
+data class SyncSummary(
+    val transferred: Int,
+    val conflicts: List<ConflictRecord>,
+    val failed: List<FailedRecord>,
+)
 
 /**
  * Reasons unison reports as `skipped: <path> (<reason>)` that represent a real
@@ -34,12 +37,11 @@ class OutputParser {
 
     private val pending = StringBuilder()
     private var swallowLeadingLf = false
-    private var conflicts = 0
-    private val failedPaths = mutableSetOf<String>()
-    private var failedWithoutPath = 0
+    private val conflictsByPath = LinkedHashMap<String, ConflictRecord>()
+    private val failedByPath = LinkedHashMap<String, FailedRecord>()
+    private val failedWithoutPath = mutableListOf<FailedRecord>()
     private var lastProgressCount = 0
     private var transferredFromSummary: Int? = null
-    private var failedFromSummary: Int? = null
 
     fun feed(chunk: String): List<SyncEvent> {
         if (chunk.isEmpty()) return emptyList()
@@ -72,11 +74,11 @@ class OutputParser {
         }
         return SyncSummary(
             transferred = transferredFromSummary ?: lastProgressCount,
+            conflicts = conflictsByPath.values.toList(),
             // Real unison prints both "Failed [path]: msg" and "  failed: path" for the
-            // same transient failure, so prefer the summary's own count and otherwise
-            // dedupe by path. Error lines carry no path and count individually.
-            failed = failedFromSummary ?: (failedPaths.size + failedWithoutPath),
-            conflicts = conflicts,
+            // same transient failure, so dedupe path-bearing entries by path. Error lines
+            // carry no path and are reported individually.
+            failed = failedByPath.values.toList() + failedWithoutPath,
         )
     }
 
@@ -95,7 +97,6 @@ class OutputParser {
         if (line.startsWith(SUMMARY_PREFIX)) {
             SUMMARY.find(line)?.let { match ->
                 transferredFromSummary = match.groupValues[1].toInt()
-                failedFromSummary = match.groupValues[4].toInt()
             }
             return listOf(SyncEvent.Completed)
         }
@@ -109,31 +110,28 @@ class OutputParser {
         SKIP.find(line)?.let { match ->
             val path = match.groupValues[1].trim()
             val reason = match.groupValues[2].trim()
-            if (reason in CONFLICT_REASONS) {
-                conflicts++
-                return listOf(SyncEvent.Conflict(path = path))
-            }
+            // Problem skips (not a conflict reason) are still surfaced, but marked
+            // unresolvable so the resolver can leave them alone.
+            conflictsByPath[path] = (conflictsByPath[path] ?: ConflictRecord(path = path)).copy(
+                reason = reason,
+                resolvable = reason in CONFLICT_REASONS,
+            )
             return emptyList()
         }
 
         FAILED_FILE.find(line)?.let { match ->
-            failedPaths += match.groupValues[1].trim()
-            return listOf(SyncEvent.FailedItem(path = match.groupValues[1].trim(), message = ""))
+            recordFailure(path = match.groupValues[1].trim(), message = "")
+            return emptyList()
         }
 
         FAILED_ITEM.find(line)?.let { match ->
-            failedPaths += match.groupValues[1].trim()
-            return listOf(
-                SyncEvent.FailedItem(
-                    path = match.groupValues[1].trim(),
-                    message = match.groupValues[2].trim(),
-                ),
-            )
+            recordFailure(path = match.groupValues[1].trim(), message = match.groupValues[2].trim())
+            return emptyList()
         }
 
         if (line.startsWith(ERROR_PREFIX)) {
-            failedWithoutPath++
-            return listOf(SyncEvent.FailedItem(path = "", message = line.substringAfter(ERROR_PREFIX).trim()))
+            failedWithoutPath += FailedRecord(path = "", message = line.substringAfter(ERROR_PREFIX).trim())
+            return emptyList()
         }
 
         if (line.contains("different versions", ignoreCase = true) ||
@@ -143,6 +141,16 @@ class OutputParser {
         }
 
         return emptyList()
+    }
+
+    // Dedupe failure records by path: `Failed [path]: msg` and `  failed: path` can
+    // both describe the same transient failure. Keep the first record, but upgrade it
+    // if a later line carries a message the first one lacked.
+    private fun recordFailure(path: String, message: String) {
+        val existing = failedByPath[path]
+        if (existing == null || (existing.message.isBlank() && message.isNotBlank())) {
+            failedByPath[path] = FailedRecord(path = path, message = message)
+        }
     }
 
     private fun isKnownUnisonMismatch(line: String): Boolean =

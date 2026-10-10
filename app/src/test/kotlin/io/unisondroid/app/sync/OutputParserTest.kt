@@ -1,5 +1,7 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.ConflictRecord
+import io.unisondroid.app.data.FailedRecord
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -33,7 +35,7 @@ class OutputParserTest {
             listOf(SyncEvent.Progress(0.12f, raw.trim())),
             events,
         )
-        assertEquals(SyncSummary(3, 0, 0), parser.finalize(0))
+        assertEquals(SyncSummary(3, emptyList(), emptyList()), parser.finalize(0))
     }
 
     @Test
@@ -58,7 +60,7 @@ class OutputParserTest {
             listOf(SyncEvent.Progress(1.0f, line2)),
             parser.feed(line2.substring(20) + "\r"),
         )
-        assertEquals(SyncSummary(10, 0, 0), parser.finalize(0))
+        assertEquals(SyncSummary(10, emptyList(), emptyList()), parser.finalize(0))
     }
 
     @Test
@@ -88,7 +90,7 @@ class OutputParserTest {
         assertEquals(1f, progress.fraction)
         assertEquals(progressLine, progress.label)
         assertEquals(SyncEvent.Completed, events[1])
-        assertEquals(SyncSummary(1, 0, 0), parser.finalize(0))
+        assertEquals(SyncSummary(1, emptyList(), emptyList()), parser.finalize(0))
     }
 
     @Test
@@ -104,7 +106,10 @@ class OutputParserTest {
             ),
             events,
         )
-        assertEquals(SyncSummary(transferred = 10, failed = 0, conflicts = 0), parser.finalize(0))
+        assertEquals(
+            SyncSummary(transferred = 10, conflicts = emptyList(), failed = emptyList()),
+            parser.finalize(0),
+        )
     }
 
     @Test
@@ -122,18 +127,22 @@ class OutputParserTest {
     fun `conflicts and failures fixture yields expected events and totals`() {
         val (parser, events) = feedAll(fixture("conflicts-failures.txt"))
 
+        assertEquals(listOf<SyncEvent>(SyncEvent.Completed), events)
         assertEquals(
-            listOf(
-                SyncEvent.Conflict("notes/plan.txt"),
-                SyncEvent.Conflict("photos/shared.bin"),
-                SyncEvent.Conflict("music/playlist.m3u"),
-                SyncEvent.FailedItem("docs/report.pdf", ""),
-                SyncEvent.FailedItem("photos/raw/img.cr2", "Input/output error"),
-                SyncEvent.Completed,
+            SyncSummary(
+                transferred = 2,
+                conflicts = listOf(
+                    ConflictRecord("notes/plan.txt", "conflicting updates"),
+                    ConflictRecord("photos/shared.bin", "properties changed on both sides"),
+                    ConflictRecord("music/playlist.m3u", "contents changed on both sides"),
+                ),
+                failed = listOf(
+                    FailedRecord("docs/report.pdf", ""),
+                    FailedRecord("photos/raw/img.cr2", "Input/output error"),
+                ),
             ),
-            events,
+            parser.finalize(0),
         )
-        assertEquals(SyncSummary(transferred = 2, failed = 2, conflicts = 3), parser.finalize(0))
     }
 
     @Test
@@ -186,10 +195,12 @@ class OutputParserTest {
             progressEvents,
         )
 
-        val (_, conflictEvents) = feedAll("  skipped: design/different versions.txt (conflicting updates)\n")
+        val (conflictParser, conflictEvents) =
+            feedAll("  skipped: design/different versions.txt (conflicting updates)\n")
+        assertTrue(conflictEvents.isEmpty(), "a skip line must not be reported as a version mismatch")
         assertEquals(
-            listOf(SyncEvent.Conflict("design/different versions.txt")),
-            conflictEvents,
+            listOf(ConflictRecord("design/different versions.txt", "conflicting updates")),
+            conflictParser.finalize(0).conflicts,
         )
 
         val (_, bannerEvents) = feedAll(
@@ -203,11 +214,18 @@ class OutputParserTest {
     fun `nonzero exit without Completed finalizes counts and appends nothing extra`() {
         val parser = OutputParser()
 
-        assertEquals(2, parser.feed("  failed: docs/report.pdf\nError: boom\n").size)
-        assertEquals(SyncSummary(transferred = 0, failed = 2, conflicts = 0), parser.finalize(1))
+        assertTrue(parser.feed("  failed: docs/report.pdf\nError: boom\n").isEmpty())
+        assertEquals(
+            SyncSummary(
+                transferred = 0,
+                conflicts = emptyList(),
+                failed = listOf(FailedRecord("docs/report.pdf", ""), FailedRecord("", "boom")),
+            ),
+            parser.finalize(1),
+        )
 
         val untouched = OutputParser()
-        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 0), untouched.finalize(1))
+        assertEquals(SyncSummary(0, emptyList(), emptyList()), untouched.finalize(1))
     }
 
     @Test
@@ -219,7 +237,10 @@ class OutputParserTest {
                 " 50%   5/9  (5.0 MiB of 9.0 MiB)  1.0 MiB/s    00:05 ETA\n",
         )
 
-        assertEquals(SyncSummary(transferred = 5, failed = 0, conflicts = 0), parser.finalize(0))
+        assertEquals(
+            SyncSummary(transferred = 5, conflicts = emptyList(), failed = emptyList()),
+            parser.finalize(0),
+        )
     }
 
     @Test
@@ -228,7 +249,14 @@ class OutputParserTest {
 
         parser.feed("  skipped: notes/plan.txt (conflicting updates)")
 
-        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 1), parser.finalize(1))
+        assertEquals(
+            SyncSummary(
+                transferred = 0,
+                conflicts = listOf(ConflictRecord("notes/plan.txt", "conflicting updates")),
+                failed = emptyList(),
+            ),
+            parser.finalize(1),
+        )
     }
 
     @Test
@@ -238,7 +266,10 @@ class OutputParserTest {
         val (parser, events) = feedAll(text)
 
         assertEquals(listOf<SyncEvent>(SyncEvent.Completed), events)
-        assertEquals(SyncSummary(transferred = 5, failed = 0, conflicts = 0), parser.finalize(0))
+        assertEquals(
+            SyncSummary(transferred = 5, conflicts = emptyList(), failed = emptyList()),
+            parser.finalize(0),
+        )
     }
 
     @Test
@@ -252,22 +283,53 @@ class OutputParserTest {
 
     @Test
     fun `incomplete summary still finalizes counts`() {
-        assertEquals(SyncSummary(transferred = 1, failed = 2, conflicts = 1), feedFinalize("incomplete.txt"))
+        assertEquals(
+            SyncSummary(
+                transferred = 1,
+                conflicts = listOf(
+                    ConflictRecord("notes/plan.txt", "conflicting updates"),
+                    ConflictRecord("broken/", "Syncing symbolic links is disabled", resolvable = false),
+                ),
+                failed = listOf(
+                    FailedRecord("docs/report.pdf", ""),
+                    FailedRecord("photos/raw/img.cr2", "Input/output error"),
+                ),
+            ),
+            feedFinalize("incomplete.txt"),
+        )
     }
 
     @Test
-    fun `problem skips are not counted as conflicts`() {
-        assertEquals(SyncSummary(transferred = 0, failed = 0, conflicts = 1), feedFinalize("skips.txt"))
+    fun `skip line becomes a resolvable conflict record`() {
+        val s = feedFinalize("skips.txt")
+        assertEquals(
+            listOf(ConflictRecord("notes/plan.txt", "conflicting updates", resolvable = true)),
+            s.conflicts.filter { it.resolvable },
+        )
+        assertTrue(s.conflicts.any { !it.resolvable }, "the symbolic-link problem must be recorded as unresolvable")
     }
 
     @Test
     fun `failed lines and zero-transfer complete summary finalize counts`() {
-        assertEquals(SyncSummary(transferred = 0, failed = 2, conflicts = 0), feedFinalize("failures.txt"))
+        assertEquals(
+            SyncSummary(
+                transferred = 0,
+                conflicts = emptyList(),
+                failed = listOf(
+                    FailedRecord("docs/report.pdf", ""),
+                    FailedRecord("photos/raw/img.cr2", "Input/output error"),
+                ),
+            ),
+            feedFinalize("failures.txt"),
+        )
     }
 
     @Test
     fun `duplicate failure forms for the same path count once via summary`() {
-        assertEquals(1, feedFinalize("failed-dedup.txt").failed)
+        assertEquals(
+            listOf(FailedRecord("notes/plan.txt", "Input/output error")),
+            feedFinalize("failed-dedup.txt").failed,
+        )
     }
 
     @Test
@@ -277,7 +339,10 @@ class OutputParserTest {
                 "  failed: notes/plan.txt\n",
         )
 
-        assertEquals(1, parser.finalize(1).failed)
+        assertEquals(
+            listOf(FailedRecord("notes/plan.txt", "Input/output error")),
+            parser.finalize(1).failed,
+        )
     }
 
     @Test
@@ -286,6 +351,11 @@ class OutputParserTest {
             "Synchronization incomplete at 21:33:33  (2 items transferred, 1 partially transferred, 3 skipped, 4 failed)\n",
         )
 
-        assertEquals(SyncSummary(transferred = 2, failed = 4, conflicts = 0), parser.finalize(1))
+        val summary = parser.finalize(1)
+        assertEquals(2, summary.transferred)
+        // The summary's failed count no longer has a counter to live in; with no
+        // `failed:`/`Failed [..]` lines there are no records to report.
+        assertTrue(summary.failed.isEmpty())
+        assertTrue(summary.conflicts.isEmpty())
     }
 }
