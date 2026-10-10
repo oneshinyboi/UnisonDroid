@@ -69,6 +69,19 @@ class SyncVariantTest {
     }
 
     @Test
+    fun `rebuild archives requests a full rescan and adds no preferences`() {
+        assertEquals(emptyList<String>(), SyncVariant.REBUILD_ARCHIVES.preferences(profile))
+        assertEquals(listOf("-ignorearchives"), SyncVariant.REBUILD_ARCHIVES.args())
+    }
+
+    @Test
+    fun `rebuild archives is a non-destructive two-way run`() {
+        assertFalse(SyncVariant.REBUILD_ARCHIVES.isOneWay)
+        assertFalse(SyncVariant.REBUILD_ARCHIVES.destroysTarget)
+        assertFalse(SyncVariant.REBUILD_ARCHIVES.isDiagnostic)
+    }
+
+    @Test
     fun `only mirror variants are destructive`() {
         assertTrue(SyncVariant.MIRROR_TO_SERVER.destroysTarget)
         assertTrue(SyncVariant.MIRROR_FROM_SERVER.destroysTarget)

@@ -103,6 +103,24 @@ class RunScreenTest {
     }
 
     @Test
+    fun `finished run keeps the unison log visible`() {
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
+
+        engine.states.value = SyncState.Finished(
+            profileId = "p1",
+            summary = SyncSummary(transferred = 0, conflicts = emptyList(), failed = emptyList()),
+            log = listOf(
+                "Contacting server...",
+                "Nothing to do: replicas have not changed since last sync.",
+            ),
+        )
+        awaitTag(RUN_LOG_TAG)
+
+        compose.onNodeWithText("Nothing to do: replicas have not changed since last sync.", substring = true)
+            .assertExists()
+    }
+
+    @Test
     fun `finished summary with a resolvable conflict shows the resolve button and invokes it`() {
         var resolved = false
         compose.setContent {

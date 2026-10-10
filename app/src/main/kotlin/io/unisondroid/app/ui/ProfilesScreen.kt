@@ -367,6 +367,12 @@ private fun ProfileRow(
                 menuExpanded = false
                 onRunVariant(it)
             }
+            HorizontalDivider()
+            RunMenuHeader("Maintenance")
+            RunMenuItem(profile, SyncVariant.REBUILD_ARCHIVES, SyncVariant.REBUILD_ARCHIVES.menuLabel()) {
+                menuExpanded = false
+                onRunVariant(it)
+            }
         }
     }
 }

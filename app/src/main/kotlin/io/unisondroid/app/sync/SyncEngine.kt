@@ -29,7 +29,7 @@ sealed interface SyncState {
     data class AwaitingHostKey(val profileId: String, val fingerprint: String) : SyncState
     data class Connecting(val profileId: String) : SyncState
     data class Syncing(val profileId: String, val log: List<String>, val progress: Float) : SyncState
-    data class Finished(val profileId: String, val summary: SyncSummary) : SyncState
+    data class Finished(val profileId: String, val summary: SyncSummary, val log: List<String> = emptyList()) : SyncState
     data class Failed(val profileId: String, val reason: Reason, val detail: String) : SyncState
 
     enum class Reason {
@@ -375,7 +375,7 @@ open class SyncEngine(
                         )
                     }
                     success = true
-                    _state.value = SyncState.Finished(profileId, summary)
+                    _state.value = SyncState.Finished(profileId, summary, log.toList())
                     return SyncOutcome.COMPLETED
                 }
             }

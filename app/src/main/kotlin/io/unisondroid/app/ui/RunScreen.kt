@@ -133,6 +133,10 @@ internal fun RunContent(
                         ConnectionOkCard()
                     } else {
                         SummaryCard(state, onResolveConflicts)
+                        if (state.log.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            FinishedLog(state.log)
+                        }
                     }
 
                 is SyncState.Failed ->
@@ -253,6 +257,29 @@ private fun SummaryCard(state: SyncState.Finished, onResolveConflicts: () -> Uni
 
 private fun detailLine(path: String, detail: String): String =
     if (detail.isBlank()) path else "$path — $detail"
+
+/**
+ * The raw Unison output, kept on screen after the run finishes. Previously the log was only shown
+ * while syncing, so a fast run (e.g. one that aborted on an archive error) hid the reason it did
+ * nothing. Newest-first, matching the live view.
+ */
+@Composable
+private fun ColumnScope.FinishedLog(log: List<String>) {
+    Text(text = "Unison log", style = MaterialTheme.typography.titleSmall)
+    Spacer(modifier = Modifier.height(4.dp))
+    LazyColumn(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .testTag(RUN_LOG_TAG),
+        reverseLayout = true,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        items(log.asReversed()) { line ->
+            Text(text = line, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
 
 @Composable
 private fun FailureCard(

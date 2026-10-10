@@ -337,6 +337,29 @@ class ProfilesScreenTest {
     }
 
     @Test
+    fun `rebuild archives runs the chosen variant without confirmation`() {
+        runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
+        var ran: Triple<String, SyncVariant, Boolean>? = null
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesScreen(
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onRunVariant = { id, variant, confirmed -> ran = Triple(id, variant, confirmed) },
+                )
+            }
+        }
+
+        awaitTag("$PROFILE_ROW_TAG-p1")
+        compose.onNodeWithTag("$PROFILE_ROW_TAG-p1").performTouchInput { longClick() }
+        awaitTag(actionTag("p1", SyncVariant.REBUILD_ARCHIVES))
+        compose.onNodeWithTag(actionTag("p1", SyncVariant.REBUILD_ARCHIVES)).performClick()
+
+        assertEquals(Triple("p1", SyncVariant.REBUILD_ARCHIVES, false), ran)
+    }
+
+    @Test
     fun `mirror to server confirms before running`() {
         runBlocking { repository.save(profile(id = "p1", name = "My Server")) }
         var ran: Triple<String, SyncVariant, Boolean>? = null

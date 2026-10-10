@@ -9,6 +9,7 @@ internal fun SyncVariant.title(): String = when (this) {
     SyncVariant.MIRROR_TO_SERVER -> "Mirror to server"
     SyncVariant.COPY_FROM_SERVER -> "Copy from server"
     SyncVariant.MIRROR_FROM_SERVER -> "Mirror from server"
+    SyncVariant.REBUILD_ARCHIVES -> "Rebuild sync archives"
     SyncVariant.TEST_CONNECTION -> "Test connection"
 }
 
@@ -19,5 +20,6 @@ internal fun SyncVariant.menuLabel(): String = when (this) {
     SyncVariant.MIRROR_TO_SERVER -> "Mirror to server (exact copy)"
     SyncVariant.COPY_FROM_SERVER -> "Copy from server (keep extras)"
     SyncVariant.MIRROR_FROM_SERVER -> "Mirror from server (exact copy)"
+    SyncVariant.REBUILD_ARCHIVES -> "Rebuild sync archives (force full scan)"
     SyncVariant.TEST_CONNECTION -> "Test connection"
 }

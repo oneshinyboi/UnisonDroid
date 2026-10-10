@@ -7,8 +7,10 @@ import io.unisondroid.app.data.Profile
  *
  * [TWO_WAY] is the normal two-directional Unison run. The one-way variants turn Unison into a
  * mirror in one direction; the COPY variants additionally keep files that exist only on the
- * target (`nodeletion`), while the MIRROR variants make the target an exact copy. [TEST_CONNECTION]
- * connects to the server and exits without touching either replica.
+ * target (`nodeletion`), while the MIRROR variants make the target an exact copy. [REBUILD_ARCHIVES]
+ * runs a normal two-way sync with `-ignorearchives`, so Unison rescans both replicas from scratch
+ * and rebuilds its state — the recovery path for "archives are not identical"/"inconsistent state"
+ * errors. [TEST_CONNECTION] connects to the server and exits without touching either replica.
  */
 enum class SyncVariant {
     TWO_WAY,
@@ -16,6 +18,7 @@ enum class SyncVariant {
     MIRROR_TO_SERVER,
     COPY_FROM_SERVER,
     MIRROR_FROM_SERVER,
+    REBUILD_ARCHIVES,
     TEST_CONNECTION;
 
     /** One-way variants turn the run into a mirror and override the profile's conflict policy. */
@@ -36,7 +39,7 @@ enum class SyncVariant {
      * `ssh://` form as [PrfGenerator.sshRoot] so Unison resolves it to the same replica.
      */
     fun preferences(profile: Profile): List<String> = when (this) {
-        TWO_WAY, TEST_CONNECTION -> emptyList()
+        TWO_WAY, TEST_CONNECTION, REBUILD_ARCHIVES -> emptyList()
         COPY_TO_SERVER -> listOf(
             "force = ${profile.localRoot}",
             "nodeletion = ${PrfGenerator.sshRoot(profile)}",
@@ -52,9 +55,14 @@ enum class SyncVariant {
     }
 
     /** Extra command-line arguments passed after the profile name. */
-    fun args(): List<String> = if (isDiagnostic) listOf(TEST_SERVER_ARG) else emptyList()
+    fun args(): List<String> = when (this) {
+        TEST_CONNECTION -> listOf(TEST_SERVER_ARG)
+        REBUILD_ARCHIVES -> listOf(IGNORE_ARCHIVES_ARG)
+        else -> emptyList()
+    }
 
     private companion object {
         const val TEST_SERVER_ARG = "-testserver"
+        const val IGNORE_ARCHIVES_ARG = "-ignorearchives"
     }
 }

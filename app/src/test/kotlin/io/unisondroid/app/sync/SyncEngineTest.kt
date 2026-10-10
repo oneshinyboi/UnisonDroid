@@ -962,6 +962,31 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `finished state retains the unison log for inspection`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(PROGRESS_LINE, SUMMARY_LINE))))
+        withTimeout(10_000) { h.engine.requestSync("prof1", SyncMode.INTERACTIVE) }
+
+        val finished = h.engine.state.value as SyncState.Finished
+        assertTrue(
+            finished.log.contains(PROGRESS_LINE) && finished.log.contains(SUMMARY_LINE),
+            "the log must survive into the finished state; got ${finished.log}",
+        )
+    }
+
+    @Test
+    fun `rebuild archives variant runs unison with ignorearchives`() = runTest {
+        val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
+        withTimeout(10_000) {
+            h.engine.requestSync("prof1", SyncMode.INTERACTIVE, SyncVariant.REBUILD_ARCHIVES)
+        }
+
+        val (_, args) = h.runner.starts.single()
+        assertTrue("-ignorearchives" in args, "got $args")
+        val prf = File(unisonDir, "prof1.prf").readText()
+        assertFalse(prf.contains("force ="), "a rebuild must not force a direction; got:\n$prf")
+    }
+
+    @Test
     fun `a destructive mirror without confirmation is refused before spawning unison`() = runTest {
         val h = harness(scripts = listOf(ScriptedProcess(lines = listOf(SUMMARY_LINE))))
 
