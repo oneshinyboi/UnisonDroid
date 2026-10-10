@@ -8,6 +8,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.AppSettings
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.SyncMode
+import io.unisondroid.app.sync.SyncVariant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -121,6 +122,14 @@ class SyncSchedulerTest {
         assertTrue("the worker must run", engine.requestLatch.await(10, TimeUnit.SECONDS))
         assertEquals("p42", engine.requestedProfileId)
         assertEquals(SyncMode.INTERACTIVE, engine.requestedMode)
+    }
+
+    @Test
+    fun `syncNow forwards the run variant to the engine`() {
+        scheduler.syncNow("p42", SyncVariant.MIRROR_TO_SERVER)
+
+        assertTrue("the worker must run", engine.requestLatch.await(10, TimeUnit.SECONDS))
+        assertEquals(SyncVariant.MIRROR_TO_SERVER, engine.requestedVariant)
     }
 
     private fun reconcile(profiles: List<Profile>, settings: AppSettings) =

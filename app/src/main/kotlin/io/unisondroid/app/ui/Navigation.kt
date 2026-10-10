@@ -7,11 +7,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import io.unisondroid.app.sync.SyncVariant
 
 object Routes {
     const val PROFILES = "profiles"
     const val EDITOR = "editor/{id}"
-    const val RUN = "run/{id}"
+    const val RUN = "run/{id}?variant={variant}"
     const val RESOLVE = "resolve/{id}"
     const val KEYS = "keys"
     const val ABOUT = "about"
@@ -21,7 +22,8 @@ object Routes {
 
     fun editor(id: String?): String = if (id.isNullOrEmpty()) EDITOR_NEW else "editor/$id"
 
-    fun run(id: String): String = "run/$id"
+    fun run(id: String, variant: SyncVariant = SyncVariant.TWO_WAY): String =
+        "run/$id?variant=${variant.name}"
 
     fun resolve(id: String): String = "resolve/$id"
 }
@@ -57,11 +59,21 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
         }
         composable(
             route = Routes.RUN,
-            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType },
+                navArgument("variant") {
+                    type = NavType.StringType
+                    defaultValue = SyncVariant.TWO_WAY.name
+                },
+            ),
         ) { entry ->
             val profileId = entry.arguments?.getString("id").orEmpty()
+            val variant = entry.arguments?.getString("variant")
+                ?.let { runCatching { SyncVariant.valueOf(it) }.getOrNull() }
+                ?: SyncVariant.TWO_WAY
             RunScreen(
                 profileId = profileId,
+                variant = variant,
                 onResolveConflicts = { navController.navigate(Routes.resolve(profileId)) },
             )
         }

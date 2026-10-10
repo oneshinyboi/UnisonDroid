@@ -39,6 +39,7 @@ import androidx.core.content.ContextCompat
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.sync.SyncState
+import io.unisondroid.app.sync.SyncVariant
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -46,6 +47,7 @@ const val RUN_LOG_TAG = "run-log"
 const val RUN_PROGRESS_TAG = "run-progress"
 const val RUN_CANCEL_TAG = "run-cancel"
 const val RUN_SUMMARY_TAG = "run-summary"
+const val RUN_CONNECTION_OK_TAG = "run-connectionOk"
 const val RUN_FAILURE_TAG = "run-failure"
 const val RUN_ENGINE_MISSING_TAG = "run-engineMissing"
 const val RUN_HOSTKEY_DIALOG_TAG = "run-hostKeyDialog"
@@ -56,6 +58,7 @@ const val RUN_RESOLVE_TAG = "run-resolveConflicts"
 @Composable
 fun RunScreen(
     profileId: String,
+    variant: SyncVariant = SyncVariant.TWO_WAY,
     onResolveConflicts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -64,8 +67,8 @@ fun RunScreen(
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsState()
 
-    LaunchedEffect(profileId) {
-        SyncScheduler(context).syncNow(profileId)
+    LaunchedEffect(profileId, variant) {
+        SyncScheduler(context).syncNow(profileId, variant)
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -84,6 +87,7 @@ fun RunScreen(
     val requestStorageAccess = rememberAllFilesAccessRequest()
     RunContent(
         state = state,
+        variant = variant,
         onCancel = { engine.cancel() },
         onHostKeyDecision = { approve -> scope.launch { engine.respondHostKey(approve) } },
         onGrantStorageAccess = requestStorageAccess,
@@ -100,10 +104,11 @@ internal fun RunContent(
     modifier: Modifier = Modifier,
     onGrantStorageAccess: () -> Unit = {},
     onResolveConflicts: () -> Unit = {},
+    variant: SyncVariant = SyncVariant.TWO_WAY,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { TopAppBar(title = { Text(text = "Sync") }) },
+        topBar = { TopAppBar(title = { Text(text = variant.title()) }) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -115,7 +120,13 @@ internal fun RunContent(
                 SyncState.Idle -> StatusLine("Starting sync…")
                 is SyncState.Connecting -> StatusLine("Connecting to the server…")
                 is SyncState.Syncing -> SyncingBody(state = state, onCancel = onCancel)
-                is SyncState.Finished -> SummaryCard(state, onResolveConflicts)
+                is SyncState.Finished ->
+                    if (variant.isDiagnostic) {
+                        ConnectionOkCard()
+                    } else {
+                        SummaryCard(state, onResolveConflicts)
+                    }
+
                 is SyncState.Failed ->
                     if (state.reason == SyncState.Reason.BINARY_MISSING) {
                         EngineMissingCard(state.detail)
@@ -169,6 +180,22 @@ private fun ColumnScope.SyncingBody(state: SyncState.Syncing, onCancel: () -> Un
         modifier = Modifier.testTag(RUN_CANCEL_TAG),
     ) {
         Text(text = "Cancel")
+    }
+}
+
+@Composable
+private fun ConnectionOkCard() {
+    Card(modifier = Modifier.fillMaxWidth().testTag(RUN_CONNECTION_OK_TAG)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = "Connection OK", style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = "Reached the server successfully. No files were changed.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 

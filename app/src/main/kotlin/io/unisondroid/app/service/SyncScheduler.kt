@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import io.unisondroid.app.data.AppSettings
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.sync.SyncMode
+import io.unisondroid.app.sync.SyncVariant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -23,12 +24,13 @@ import java.util.concurrent.TimeUnit
  */
 class SyncScheduler(private val context: Context) {
 
-    fun syncNow(profileId: String) {
+    fun syncNow(profileId: String, variant: SyncVariant = SyncVariant.TWO_WAY) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setInputData(
                 workDataOf(
                     SyncWorker.KEY_PROFILE_ID to profileId,
                     SyncWorker.KEY_MODE to SyncMode.INTERACTIVE.name,
+                    SyncWorker.KEY_VARIANT to variant.name,
                 ),
             )
             .build()

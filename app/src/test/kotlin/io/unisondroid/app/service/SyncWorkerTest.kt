@@ -12,6 +12,7 @@ import androidx.work.workDataOf
 import com.google.common.util.concurrent.ListenableFuture
 import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncOutcome
+import io.unisondroid.app.sync.SyncVariant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -153,14 +154,51 @@ class SyncWorkerTest {
         assertEquals(SyncMode.UNATTENDED, engine.requestedMode)
     }
 
-    private fun worker(profileId: String, mode: SyncMode): SyncWorker =
-        TestListenableWorkerBuilder<SyncWorker>(context)
-            .setInputData(input(profileId, mode))
+    @Test
+    fun `worker forwards the run variant to the engine`() {
+        engine.outcome = SyncOutcome.COMPLETED
+
+        val result = runBlocking {
+            worker("p42", SyncMode.INTERACTIVE, SyncVariant.COPY_FROM_SERVER).doWork()
+        }
+
+        assertEquals(ListenableWorker.Result.success(), result)
+        assertEquals(SyncVariant.COPY_FROM_SERVER, engine.requestedVariant)
+    }
+
+    @Test
+    fun `missing variant input defaults to two way`() {
+        val built = TestListenableWorkerBuilder<SyncWorker>(context)
+            .setInputData(
+                workDataOf(
+                    SyncWorker.KEY_PROFILE_ID to "p1",
+                    SyncWorker.KEY_MODE to SyncMode.INTERACTIVE.name,
+                ),
+            )
             .build()
 
-    private fun input(profileId: String, mode: SyncMode) = workDataOf(
+        runBlocking { built.doWork() }
+
+        assertEquals(SyncVariant.TWO_WAY, engine.requestedVariant)
+    }
+
+    private fun worker(
+        profileId: String,
+        mode: SyncMode,
+        variant: SyncVariant = SyncVariant.TWO_WAY,
+    ): SyncWorker =
+        TestListenableWorkerBuilder<SyncWorker>(context)
+            .setInputData(input(profileId, mode, variant))
+            .build()
+
+    private fun input(
+        profileId: String,
+        mode: SyncMode,
+        variant: SyncVariant = SyncVariant.TWO_WAY,
+    ) = workDataOf(
         SyncWorker.KEY_PROFILE_ID to profileId,
         SyncWorker.KEY_MODE to mode.name,
+        SyncWorker.KEY_VARIANT to variant.name,
     )
 
     private fun terminalNotificationText(): String? =

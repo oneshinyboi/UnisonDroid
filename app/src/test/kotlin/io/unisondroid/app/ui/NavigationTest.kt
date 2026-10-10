@@ -2,10 +2,13 @@ package io.unisondroid.app.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.ConflictRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
@@ -18,6 +21,7 @@ import io.unisondroid.app.sync.FakeSshTool
 import io.unisondroid.app.sync.OutputParser
 import io.unisondroid.app.sync.SyncEngine
 import io.unisondroid.app.sync.SyncState
+import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +34,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -48,6 +53,7 @@ class NavigationTest {
 
     @Before
     fun setUp() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(RuntimeEnvironment.getApplication())
         val dir = Files.createTempDirectory("navigation-test").toFile()
         val store = JsonStore(dir)
         repository = ProfileRepository(store)
@@ -127,6 +133,22 @@ class NavigationTest {
 
         awaitTag("${RESOLVE_ROW_PREFIX}notes/plan.txt")
         compose.onNodeWithTag("${RESOLVE_ROW_PREFIX}notes/plan.txt").assertExists()
+    }
+
+    @Test
+    fun `run route renders the run screen for the requested variant`() {
+        lateinit var navController: NavHostController
+        compose.setContent {
+            navController = rememberNavController()
+            UnisonDroidTheme { UnisonDroidNavHost(navController) }
+        }
+        compose.waitForIdle()
+        compose.runOnUiThread { navController.navigate(Routes.run("p1", SyncVariant.MIRROR_TO_SERVER)) }
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Mirror to server").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Mirror to server").assertExists()
     }
 
     private fun awaitTag(tag: String) {

@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.unisondroid.app.sync.SyncMode
 import io.unisondroid.app.sync.SyncOutcome
+import io.unisondroid.app.sync.SyncVariant
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -27,6 +28,9 @@ class SyncWorker(
         val mode = inputData.getString(KEY_MODE)
             ?.let { runCatching { SyncMode.valueOf(it) }.getOrNull() }
             ?: SyncMode.UNATTENDED
+        val variant = inputData.getString(KEY_VARIANT)
+            ?.let { runCatching { SyncVariant.valueOf(it) }.getOrNull() }
+            ?: SyncVariant.TWO_WAY
 
         val notifications = SyncNotifications(applicationContext)
 
@@ -35,7 +39,7 @@ class SyncWorker(
         runCatching { setForeground(notifications.foregroundInfo(TEXT_RUNNING)) }
 
         val outcome = try {
-            ServiceLocator.engine(applicationContext).requestSync(profileId, mode)
+            ServiceLocator.engine(applicationContext).requestSync(profileId, mode, variant)
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {
@@ -64,6 +68,7 @@ class SyncWorker(
     companion object {
         const val KEY_PROFILE_ID = "profileId"
         const val KEY_MODE = "mode"
+        const val KEY_VARIANT = "variant"
         private const val TEXT_RUNNING = "Syncing…"
     }
 }

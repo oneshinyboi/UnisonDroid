@@ -190,6 +190,41 @@ class RunScreenTest {
     }
 
     @Test
+    fun `shows the run variant as the title`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.COPY_FROM_SERVER) }
+        }
+
+        compose.onNodeWithText("Copy from server").assertExists()
+    }
+
+    @Test
+    fun `passes the selected variant to the sync run`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p42", variant = SyncVariant.MIRROR_TO_SERVER) }
+        }
+
+        compose.waitUntil(5_000) { engine.requestedVariant == SyncVariant.MIRROR_TO_SERVER }
+        assertEquals(SyncVariant.MIRROR_TO_SERVER, engine.requestedVariant)
+    }
+
+    @Test
+    fun `a finished connection test shows a connection card not a sync summary`() {
+        compose.setContent {
+            UnisonDroidTheme { RunScreen(profileId = "p1", variant = SyncVariant.TEST_CONNECTION) }
+        }
+
+        engine.states.value = SyncState.Finished(
+            profileId = "p1",
+            summary = SyncSummary(transferred = 0, conflicts = emptyList(), failed = emptyList()),
+        )
+        awaitTag(RUN_CONNECTION_OK_TAG)
+
+        compose.onNodeWithText("Connection OK", substring = true).assertExists()
+        compose.onNodeWithText("transferred", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun `failed with binary missing renders an engine-missing card not the raw detail`() {
         compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
 
@@ -254,11 +289,18 @@ private class FakeSyncEngine : SyncEngine(
         private set
     val hostKeyDecisions = mutableListOf<Boolean>()
 
+    @Volatile
+    var requestedVariant: SyncVariant? = null
+        private set
+
     override suspend fun requestSync(
         profileId: String,
         mode: SyncMode,
         variant: SyncVariant,
-    ): SyncOutcome = SyncOutcome.COMPLETED
+    ): SyncOutcome {
+        requestedVariant = variant
+        return SyncOutcome.COMPLETED
+    }
 
     override suspend fun respondHostKey(approve: Boolean) {
         hostKeyDecisions += approve
