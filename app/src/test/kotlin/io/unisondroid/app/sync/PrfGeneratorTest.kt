@@ -180,33 +180,50 @@ class PrfGeneratorTest {
 
         assertFalse(out.contains("prefer"), "SKIP must emit nothing, got:\n$out")
         assertFalse(out.contains("copyonconflict"), "SKIP must emit nothing, got:\n$out")
+        assertFalse(out.contains("times ="), "SKIP must not touch times, got:\n$out")
     }
 
     @Test
-    fun `prefer newer writes prefer newer`() {
+    fun `prefer newer writes prefer newer and enables times`() {
         val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_NEWER), sshCommand()).lines()
 
         assertTrue(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
+        assertTrue(lines.contains("times = true"), "mtime policy must enable times; got:\n${lines.joinToString("\n")}")
     }
 
     @Test
-    fun `prefer older writes prefer older`() {
+    fun `prefer older writes prefer older and enables times`() {
         val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_OLDER), sshCommand()).lines()
 
         assertTrue(lines.contains("prefer = older"), "got:\n${lines.joinToString("\n")}")
+        assertTrue(lines.contains("times = true"), "mtime policy must enable times; got:\n${lines.joinToString("\n")}")
     }
 
     @Test
-    fun `prefer older is dropped when advanced prefs disable times`() {
+    fun `mtime policy overrides an explicit times false by coming last`() {
         val lines = PrfGenerator.generate(
             profile(policy = ConflictPolicy.PREFER_OLDER, advancedPrefs = "times = false\n"),
             sshCommand(),
         ).lines()
 
+        val explicitFalse = lines.indexOf("times = false")
+        val forcedTrue = lines.indexOf("times = true")
         assertTrue(
-            lines.none { it == "prefer = older" },
-            "prefer = older must not be emitted with times=false (unison aborts the run); got:\n${lines.joinToString("\n")}",
+            explicitFalse >= 0,
+            "expected the user's times=false to still be present; got:\n${lines.joinToString("\n")}",
         )
+        assertTrue(
+            forcedTrue > explicitFalse,
+            "times=true must come after times=false so the policy works; got:\n${lines.joinToString("\n")}",
+        )
+    }
+
+    @Test
+    fun `policies that do not use mtimes leave times untouched`() {
+        for (policy in listOf(ConflictPolicy.SKIP, ConflictPolicy.PREFER_LOCAL, ConflictPolicy.PREFER_REMOTE)) {
+            val out = PrfGenerator.generate(profile(policy = policy), sshCommand())
+            assertFalse(out.contains("times ="), "$policy must not set times; got:\n$out")
+        }
     }
 
     @Test
@@ -235,6 +252,7 @@ class PrfGeneratorTest {
 
         assertTrue(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
         assertTrue(lines.contains("copyonconflict = true"), "got:\n${lines.joinToString("\n")}")
+        assertTrue(lines.contains("times = true"), "mtime policy must enable times; got:\n${lines.joinToString("\n")}")
     }
 
     @Test
@@ -261,5 +279,6 @@ class PrfGeneratorTest {
         assertTrue(lines.contains("force = /storage/emulated/0/Documents"), "got:\n${lines.joinToString("\n")}")
         assertFalse(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
         assertFalse(lines.contains("copyonconflict = true"), "got:\n${lines.joinToString("\n")}")
+        assertFalse(lines.contains("times = true"), "a one-way mirror must not start syncing times; got:\n${lines.joinToString("\n")}")
     }
 }

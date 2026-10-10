@@ -62,18 +62,22 @@ object PrfGenerator {
 
     internal fun conflictPolicyPreferences(profile: Profile): List<String> = when (profile.conflictPolicy) {
         ConflictPolicy.SKIP -> emptyList()
-        ConflictPolicy.PREFER_NEWER -> listOf("prefer = newer")
-        // `prefer = older` requires synced modtimes; if the user disabled them in the
-        // advanced prefs, Unison aborts the whole run, so fall back to skipping the
-        // conflict (the safe default) instead of failing the sync.
-        ConflictPolicy.PREFER_OLDER -> if (timesDisabled(profile)) emptyList() else listOf("prefer = older")
+        ConflictPolicy.PREFER_NEWER -> listOf("prefer = newer") + MTIME_SYNC
+        // `prefer = older`/`newer` compare file modtimes. Unison's `times` pref
+        // defaults to false (mtimes are not propagated), and it rejects
+        // `prefer=older` outright unless `times=true`, so enable it here. This
+        // line is emitted after the advanced prefs, so it wins over a
+        // `times = false` written there.
+        ConflictPolicy.PREFER_OLDER -> listOf("prefer = older") + MTIME_SYNC
         ConflictPolicy.PREFER_LOCAL -> listOf("prefer = ${profile.localRoot}")
         ConflictPolicy.PREFER_REMOTE -> listOf("prefer = ${sshRoot(profile)}")
-        ConflictPolicy.KEEP_BOTH -> listOf("prefer = newer", "copyonconflict = true")
+        ConflictPolicy.KEEP_BOTH -> listOf("prefer = newer", "copyonconflict = true") + MTIME_SYNC
     }
 
-    private fun timesDisabled(profile: Profile): Boolean =
-        TIMES_FALSE.containsMatchIn(profile.advancedPrefs)
+    // The mtime-based conflict policies need `times = true` to work at all
+    // (`older` is rejected without it; `newer`/keep-both otherwise compare
+    // unsynced modtimes). Policies that pick a root by name don't need it.
+    private val MTIME_SYNC = listOf("times = true")
 
     // A scalar pref such as `copyonconflict = true` must be emitted at most once,
     // even when both the profile's policy and a per-file decision request it.
@@ -84,11 +88,6 @@ object PrfGenerator {
     }
 
     private const val PREFER_PARTIAL_PREFIX = "preferpartial"
-
-    // A `times = false` line (any spacing) in the advanced prefs disables modtime syncing.
-    // Only the profile's literal advancedPrefs are inspected; a `times = false` in a
-    // sourced/included pref file would not be detected (the app never writes those).
-    private val TIMES_FALSE = Regex("""(?m)^\s*times\s*=\s*false\s*$""")
 
     internal fun sshRoot(profile: Profile): String =
         "ssh://${profile.user}@${profile.host}/${profile.remoteRoot}"
