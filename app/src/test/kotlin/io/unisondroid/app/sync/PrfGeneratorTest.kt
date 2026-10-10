@@ -1,5 +1,6 @@
 package io.unisondroid.app.sync
 
+import io.unisondroid.app.data.ConflictPolicy
 import io.unisondroid.app.data.Profile
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -16,6 +17,7 @@ class PrfGeneratorTest {
         serverCommand: String = "unison",
         ignorePatterns: List<String> = emptyList(),
         advancedPrefs: String = "",
+        policy: ConflictPolicy = ConflictPolicy.SKIP,
     ) = Profile(
         id = "p1",
         name = "Phone",
@@ -28,6 +30,7 @@ class PrfGeneratorTest {
         serverCommand = serverCommand,
         ignorePatterns = ignorePatterns,
         advancedPrefs = advancedPrefs,
+        conflictPolicy = policy,
     )
 
     private fun sshCommand() = SshCommand(
@@ -131,5 +134,65 @@ class PrfGeneratorTest {
 
         assertTrue(out.endsWith("fastcheck = false\n"))
         assertFalse(out.endsWith("\n\n"))
+    }
+
+    @Test
+    fun `skip policy writes no conflict prefs`() {
+        val out = PrfGenerator.generate(profile(), sshCommand())
+
+        assertFalse(out.contains("prefer"), "SKIP must emit nothing, got:\n$out")
+        assertFalse(out.contains("copyonconflict"), "SKIP must emit nothing, got:\n$out")
+    }
+
+    @Test
+    fun `prefer newer writes prefer newer`() {
+        val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_NEWER), sshCommand()).lines()
+
+        assertTrue(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
+    }
+
+    @Test
+    fun `prefer older writes prefer older`() {
+        val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_OLDER), sshCommand()).lines()
+
+        assertTrue(lines.contains("prefer = older"), "got:\n${lines.joinToString("\n")}")
+    }
+
+    @Test
+    fun `prefer local writes the local root`() {
+        val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_LOCAL), sshCommand()).lines()
+
+        assertTrue(
+            lines.contains("prefer = /storage/emulated/0/Documents"),
+            "got:\n${lines.joinToString("\n")}",
+        )
+    }
+
+    @Test
+    fun `prefer remote names the ssh root exactly`() {
+        val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.PREFER_REMOTE), sshCommand()).lines()
+
+        assertTrue(
+            lines.contains("prefer = ssh://diamond@server.example//srv/sync"),
+            "got:\n${lines.joinToString("\n")}",
+        )
+    }
+
+    @Test
+    fun `keep both prefers newer and copies on conflict`() {
+        val lines = PrfGenerator.generate(profile(policy = ConflictPolicy.KEEP_BOTH), sshCommand()).lines()
+
+        assertTrue(lines.contains("prefer = newer"), "got:\n${lines.joinToString("\n")}")
+        assertTrue(lines.contains("copyonconflict = true"), "got:\n${lines.joinToString("\n")}")
+    }
+
+    @Test
+    fun `conflict prefs come after the advanced block`() {
+        val out = PrfGenerator.generate(
+            profile(advancedPrefs = "fastcheck = false\n", policy = ConflictPolicy.PREFER_NEWER),
+            sshCommand(),
+        )
+
+        assertTrue(out.indexOf("fastcheck = false") < out.indexOf("prefer = newer"), "got:\n$out")
     }
 }
