@@ -201,6 +201,58 @@ class ProfilesScreenTest {
     }
 
     @Test
+    fun `resolve action on a conflicted profile invokes onResolveConflicts with its id`() {
+        var resolved: String? = null
+        val conflicting = profile(id = "p1", name = "My Server").copy(
+            lastConflicts = listOf(
+                ConflictRecord("a.txt", "conflicting updates", resolvable = true),
+            ),
+        )
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesContent(
+                    profiles = listOf(conflicting),
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onResolveConflicts = { resolved = it },
+                )
+            }
+        }
+
+        awaitTag("${PROFILE_RESOLVE_PREFIX}p1")
+        compose.onNodeWithTag("${PROFILE_RESOLVE_PREFIX}p1").performClick()
+
+        assertEquals("p1", resolved)
+    }
+
+    @Test
+    fun `resolve action is hidden without resolvable conflicts`() {
+        val noConflicts = profile(id = "p1", name = "No Conflicts")
+        val unresolvable = profile(id = "p2", name = "Unresolvable").copy(
+            lastConflicts = listOf(
+                ConflictRecord("a.txt", "atomic directory", resolvable = false),
+            ),
+        )
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfilesContent(
+                    profiles = listOf(noConflicts, unresolvable),
+                    onOpenProfile = {},
+                    onStartSync = {},
+                    onResolveConflicts = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("No Conflicts").assertExists()
+        compose.onNodeWithText("Unresolvable").assertExists()
+        compose.onNodeWithTag("${PROFILE_RESOLVE_PREFIX}p1").assertDoesNotExist()
+        compose.onNodeWithTag("${PROFILE_RESOLVE_PREFIX}p2").assertDoesNotExist()
+    }
+
+    @Test
     fun `getting-started card offers the all files access grant when access is missing`() {
         var granted = false
 

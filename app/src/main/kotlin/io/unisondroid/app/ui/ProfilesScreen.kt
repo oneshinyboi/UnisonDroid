@@ -53,6 +53,7 @@ const val PROFILES_ABOUT_ACTION_TAG = "profiles-about-action"
 const val PROFILES_SETTINGS_ACTION_TAG = "profiles-settings-action"
 const val PROFILE_EDIT_PREFIX = "profileEdit-"
 const val PROFILE_DELETE_PREFIX = "profileDelete-"
+const val PROFILE_RESOLVE_PREFIX = "profileResolve-"
 const val CONFLICTS_COUNT_PREFIX = "profileConflicts-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
 
@@ -69,6 +70,7 @@ fun ProfilesScreen(
     onOpenKeys: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onResolveConflicts: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -100,6 +102,7 @@ fun ProfilesScreen(
         onOpenKeys = onOpenKeys,
         onOpenAbout = onOpenAbout,
         onOpenSettings = onOpenSettings,
+        onResolveConflicts = onResolveConflicts,
         modifier = modifier,
     )
 }
@@ -116,6 +119,7 @@ internal fun ProfilesContent(
     onOpenKeys: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onResolveConflicts: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<Profile?>(null) }
@@ -170,6 +174,7 @@ internal fun ProfilesContent(
                         onClick = { onStartSync(profile.id) },
                         onEdit = { onOpenProfile(profile.id) },
                         onDelete = { pendingDelete = profile },
+                        onResolve = { onResolveConflicts(profile.id) },
                     )
                     HorizontalDivider()
                 }
@@ -204,6 +209,7 @@ private fun ProfileRow(
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onResolve: () -> Unit,
 ) {
     ListItem(
         modifier = Modifier
@@ -231,6 +237,12 @@ private fun ProfileRow(
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusChip(result = profile.lastResult)
+                if (profile.lastConflicts.any { it.resolvable }) {
+                    TextButton(
+                        onClick = onResolve,
+                        modifier = Modifier.testTag("$PROFILE_RESOLVE_PREFIX${profile.id}"),
+                    ) { Text("Resolve") }
+                }
                 TextButton(
                     onClick = onEdit,
                     modifier = Modifier.testTag("$PROFILE_EDIT_PREFIX${profile.id}"),

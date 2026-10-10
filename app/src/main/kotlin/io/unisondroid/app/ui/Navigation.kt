@@ -36,6 +36,7 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
                 onOpenKeys = { navController.navigate(Routes.KEYS) },
                 onOpenAbout = { navController.navigate(Routes.ABOUT) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onResolveConflicts = { id -> navController.navigate(Routes.resolve(id)) },
             )
         }
         composable(
