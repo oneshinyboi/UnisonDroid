@@ -2,7 +2,8 @@
 #
 # Cross-compile Unison for Android.
 #
-# Produces native/out/<abi>/libunison.so for arm64-v8a and x86_64.
+# Produces native/out/<abi>/libunison_<version>.so for arm64-v8a and x86_64.
+# The bundled tags are listed in native/unison-versions.txt.
 #
 # The pipeline is:
 #   1. Build a native (host) OCaml 4.14.x toolchain.
@@ -23,13 +24,18 @@
 set -euo pipefail
 
 # --- Pins -------------------------------------------------------------------
-# Unison release tag pinned for the bundled native server binary.
-# OutputParser mismatch markers and test fixtures are verified against this tag.
-UNISON_VERSION=v2.53.8
+# Unison release tag for the native server binary. Override with UNISON_VERSION
+# to build another bundled tag (see native/unison-versions.txt). OutputParser
+# mismatch markers and test fixtures are verified against the pinned default.
+UNISON_VERSION="${UNISON_VERSION:-v2.53.8}"
 OCAML_VERSION=4.14.2
 NDK_VERSION=29.0.14206865
 ANDROID_API=26
 UNISON_REPO=https://github.com/bcpierce00/unison.git
+
+# Derive the packaged file name from the tag: v2.54.0 -> libunison_2_54_0.so
+UNISON_VER="${UNISON_VERSION#v}"
+UNISON_LIB="libunison_${UNISON_VER//./_}.so"
 
 # --- Paths ------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,8 +69,8 @@ LD="$TOOLCHAIN_BIN/ld.lld"
 CROSS_OCAML_PREFIX="$WORK_DIR/ocaml-$TRIPLE"
 MIXED_BIN="$WORK_DIR/mixed-$TRIPLE/bin"
 UNISON_SRC="$WORK_DIR/unison-$ABI"
-OUT_BIN="$OUT_DIR/$ABI/libunison.so"
-JNI_BIN="$REPO_ROOT/app/src/main/jniLibs/$ABI/libunison.so"
+OUT_BIN="$OUT_DIR/$ABI/$UNISON_LIB"
+JNI_BIN="$REPO_ROOT/app/src/main/jniLibs/$ABI/$UNISON_LIB"
 
 install_to_jni() {
   mkdir -p "$(dirname "$JNI_BIN")"
