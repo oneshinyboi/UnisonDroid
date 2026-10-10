@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -36,6 +37,7 @@ import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.SshKey
 import io.unisondroid.app.data.Transport
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.service.SyncScheduler
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -49,9 +51,16 @@ const val FIELD_KEY = "editor-sshKey"
 const val FIELD_IGNORE = "editor-ignorePatterns"
 const val FIELD_ADVANCED = "editor-advancedPrefs"
 const val FIELD_SERVER_CMD = "editor-serverCommand"
+const val FIELD_AUTO_SYNC = "editor-autoSync"
+const val FIELD_INTERVAL = "editor-autoSyncInterval"
 const val BROWSE_LOCAL = "editor-browseLocal"
 const val SAVE_BUTTON = "editor-save"
 const val VALIDATION_ERROR = "editor-validationError"
+
+val AUTO_SYNC_INTERVALS_MINUTES = listOf(15, 30, 60, 180, 360, 720, 1440)
+
+internal fun intervalLabel(minutes: Int): String =
+    if (minutes < 60) "$minutes min" else "${minutes / 60} h"
 
 @Composable
 fun ProfileEditorScreen(
@@ -85,6 +94,10 @@ fun ProfileEditorScreen(
         onSave = { profile ->
             scope.launch {
                 repository.save(profile)
+                SyncScheduler(context).reconcile(
+                    repository.profiles(),
+                    ServiceLocator.settings(context).get(),
+                )
                 onSaved()
             }
         },
@@ -121,6 +134,9 @@ internal fun ProfileEditorContent(
     }
     var serverCommand by remember(initial) { mutableStateOf(initial?.serverCommand ?: "unison") }
     var advanced by remember(initial) { mutableStateOf(initial?.advancedPrefs ?: "") }
+    var autoSyncEnabled by remember(initial) { mutableStateOf(initial?.autoSyncEnabled ?: false) }
+    var intervalMinutes by remember(initial) { mutableStateOf(initial?.autoSyncIntervalMinutes ?: 60) }
+    var intervalMenu by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var browsing by remember { mutableStateOf(false) }
     var keyMenu by remember { mutableStateOf(false) }
@@ -154,6 +170,8 @@ internal fun ProfileEditorContent(
                 serverCommand = serverCommand.trim().ifEmpty { "unison" },
                 ignorePatterns = ignoreText.split('\n').map { it.trim() }.filter { it.isNotEmpty() },
                 advancedPrefs = advanced,
+                autoSyncEnabled = autoSyncEnabled,
+                autoSyncIntervalMinutes = intervalMinutes,
                 lastSyncedAt = initial?.lastSyncedAt,
                 lastResult = initial?.lastResult,
             ),
@@ -292,6 +310,43 @@ internal fun ProfileEditorContent(
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth().testTag(FIELD_ADVANCED),
             )
+
+            Text(
+                text = "Scheduled sync",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(text = "Sync automatically")
+                Switch(
+                    checked = autoSyncEnabled,
+                    onCheckedChange = { autoSyncEnabled = it },
+                    modifier = Modifier.testTag(FIELD_AUTO_SYNC),
+                )
+            }
+            if (autoSyncEnabled) {
+                Text(text = "Sync interval", style = MaterialTheme.typography.bodyMedium)
+                Box {
+                    OutlinedButton(
+                        onClick = { intervalMenu = true },
+                        modifier = Modifier.fillMaxWidth().testTag(FIELD_INTERVAL),
+                    ) { Text(text = intervalLabel(intervalMinutes)) }
+                    DropdownMenu(expanded = intervalMenu, onDismissRequest = { intervalMenu = false }) {
+                        AUTO_SYNC_INTERVALS_MINUTES.forEach { minutes ->
+                            DropdownMenuItem(
+                                text = { Text(intervalLabel(minutes)) },
+                                onClick = {
+                                    intervalMinutes = minutes
+                                    intervalMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -88,6 +88,16 @@ class SyncSchedulerTest {
     }
 
     @Test
+    fun `cancel stops a profile's periodic work`() {
+        scheduler.reconcile(listOf(profile("p1", enabled = true)), AppSettings())
+        assertEquals(WorkInfo.State.ENQUEUED, onlyWork("sync-p1").state)
+
+        scheduler.cancel("p1")
+
+        assertEquals(WorkInfo.State.CANCELLED, onlyWork("sync-p1").state)
+    }
+
+    @Test
     fun `syncNow enqueues a one-shot INTERACTIVE request`() {
         scheduler.syncNow("p42")
 

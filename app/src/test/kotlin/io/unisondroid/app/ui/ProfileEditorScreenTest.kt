@@ -1,5 +1,6 @@
 package io.unisondroid.app.ui
 
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -7,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.work.testing.WorkManagerTestInitHelper
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
@@ -26,6 +28,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -45,6 +48,7 @@ class ProfileEditorScreenTest {
 
     @Before
     fun setUp() {
+        WorkManagerTestInitHelper.initializeTestWorkManager(RuntimeEnvironment.getApplication())
         dir = Files.createTempDirectory("profile-editor-test").toFile()
         val store = JsonStore(dir)
         repository = ProfileRepository(store)
@@ -207,6 +211,30 @@ class ProfileEditorScreenTest {
         assertEquals("unison", profile.serverCommand)
     }
 
+    @Test
+    fun `auto-sync switch and interval round-trip into the saved profile`() {
+        runBlocking { repository.save(seedProfile(autoSyncEnabled = true, autoSyncIntervalMinutes = 180)) }
+
+        compose.setContent {
+            UnisonDroidTheme {
+                ProfileEditorScreen(profileId = "p1", onSaved = {})
+            }
+        }
+        awaitEditor()
+
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).performScrollTo().assertIsOn()
+        compose.onNodeWithTag(FIELD_INTERVAL).performScrollTo()
+        compose.onNodeWithText("3 h").assertExists()
+
+        compose.onNodeWithTag(FIELD_AUTO_SYNC).performScrollTo().performClick()
+        compose.onNodeWithTag(SAVE_BUTTON).performClick()
+
+        compose.waitUntil(5_000) {
+            runBlocking { repository.get("p1")?.autoSyncEnabled == false }
+        }
+        assertFalse(runBlocking { repository.get("p1")!!.autoSyncEnabled })
+    }
+
     private fun fillRequired() {
         compose.onNodeWithTag(FIELD_NAME).performScrollTo().performTextInput("Phone")
         compose.onNodeWithTag(FIELD_LOCAL_ROOT).performScrollTo().performTextInput("/storage/emulated/0/Unison")
@@ -227,6 +255,21 @@ class ProfileEditorScreenTest {
         }
         return runBlocking { repository.profiles() }.single()
     }
+
+    private fun seedProfile(
+        autoSyncEnabled: Boolean = false,
+        autoSyncIntervalMinutes: Int = 60,
+    ): Profile = Profile(
+        id = "p1",
+        name = "Phone",
+        localRoot = "/storage/emulated/0/Unison",
+        remoteRoot = "/home/user/sync",
+        host = "server.example.com",
+        user = "user",
+        sshKeyId = "key1",
+        autoSyncEnabled = autoSyncEnabled,
+        autoSyncIntervalMinutes = autoSyncIntervalMinutes,
+    )
 
     private object XorCipher : KeyCipher {
         override fun encrypt(plain: ByteArray): ByteArray =

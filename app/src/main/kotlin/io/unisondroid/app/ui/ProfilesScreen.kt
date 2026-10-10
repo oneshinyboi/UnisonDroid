@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.unisondroid.app.data.Profile
 import io.unisondroid.app.service.ServiceLocator
+import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.ui.components.StatusChip
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -85,6 +86,11 @@ fun ProfilesScreen(
         onDeleteProfile = { id ->
             scope.launch {
                 repository.delete(id)
+                SyncScheduler(context).cancel(id)
+                SyncScheduler(context).reconcile(
+                    repository.profiles(),
+                    ServiceLocator.settings(context).get(),
+                )
                 refresh++
             }
         },

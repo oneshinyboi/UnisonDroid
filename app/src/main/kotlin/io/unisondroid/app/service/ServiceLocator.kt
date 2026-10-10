@@ -4,6 +4,7 @@ import android.content.Context
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyVault
 import io.unisondroid.app.data.ProfileRepository
+import io.unisondroid.app.data.SettingsRepository
 import io.unisondroid.app.data.TinkKeyCipher
 import io.unisondroid.app.sync.BinaryLocator
 import io.unisondroid.app.sync.OutputParser
@@ -30,6 +31,11 @@ object ServiceLocator {
     @Volatile
     var keysProvider: (Context) -> KeyVault = defaultKeysProvider
 
+    val defaultSettingsProvider: (Context) -> SettingsRepository = ::buildSettings
+
+    @Volatile
+    var settingsProvider: (Context) -> SettingsRepository = defaultSettingsProvider
+
     private var cached: SyncEngine? = null
     private var cachedProvider: ((Context) -> SyncEngine)? = null
 
@@ -38,6 +44,9 @@ object ServiceLocator {
 
     private var cachedKeys: KeyVault? = null
     private var cachedKeysProvider: ((Context) -> KeyVault)? = null
+
+    private var cachedSettings: SettingsRepository? = null
+    private var cachedSettingsProvider: ((Context) -> SettingsRepository)? = null
 
     private var cachedStore: JsonStore? = null
 
@@ -75,6 +84,17 @@ object ServiceLocator {
     }
 
     @Synchronized
+    fun settings(context: Context): SettingsRepository {
+        val provider = settingsProvider
+        val existing = cachedSettings
+        if (existing != null && cachedSettingsProvider === provider) return existing
+        val created = provider(context)
+        cachedSettings = created
+        cachedSettingsProvider = provider
+        return created
+    }
+
+    @Synchronized
     fun reset() {
         cached = null
         cachedProvider = null
@@ -82,6 +102,8 @@ object ServiceLocator {
         cachedProfilesProvider = null
         cachedKeys = null
         cachedKeysProvider = null
+        cachedSettings = null
+        cachedSettingsProvider = null
         cachedStore = null
     }
 
@@ -93,6 +115,9 @@ object ServiceLocator {
 
     private fun buildProfiles(context: Context): ProfileRepository =
         ProfileRepository(store(context))
+
+    private fun buildSettings(context: Context): SettingsRepository =
+        SettingsRepository(store(context))
 
     private fun buildKeys(context: Context): KeyVault =
         KeyVault(store(context), TinkKeyCipher(context), sshTool(context))

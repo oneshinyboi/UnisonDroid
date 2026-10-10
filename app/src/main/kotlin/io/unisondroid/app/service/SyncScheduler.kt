@@ -33,6 +33,10 @@ class SyncScheduler(private val context: Context) {
             .enqueueUniqueWork(nowWorkName(profileId), ExistingWorkPolicy.KEEP, request)
     }
 
+    fun cancel(profileId: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(periodicWorkName(profileId))
+    }
+
     fun reconcile(profiles: List<Profile>, settings: AppSettings) {
         profiles.forEach { profile ->
             val name = periodicWorkName(profile.id)
