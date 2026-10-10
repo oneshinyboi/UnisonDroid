@@ -11,7 +11,4 @@ object UnisonInfo {
 
     fun forVersion(version: String): BundledUnison =
         BUNDLED.firstOrNull { it.version == version } ?: DEFAULT
-
-    // Retained for AboutScreen until Task 4 lists every bundled version.
-    val UNISON_VERSION: String = "2.53.8"
 }

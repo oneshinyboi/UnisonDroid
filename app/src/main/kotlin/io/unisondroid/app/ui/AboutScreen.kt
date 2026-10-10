@@ -35,11 +35,14 @@ fun AboutScreen(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(text = "UnisonDroid", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                text = "Unison version: ${UnisonInfo.UNISON_VERSION}",
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.testTag(ABOUT_VERSION_TAG),
-            )
+            Text(text = "Bundled Unison versions", style = MaterialTheme.typography.titleMedium)
+            UnisonInfo.BUNDLED.forEachIndexed { index, bundled ->
+                Text(
+                    text = "${bundled.version}  (${bundled.fileName})",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = if (index == 0) Modifier.testTag(ABOUT_VERSION_TAG) else Modifier,
+                )
+            }
             Text(
                 text = "UnisonDroid is a file-sync client for Android. It ships the unison " +
                     "engine and connects over SSH to a unison socket running on your computer.",
