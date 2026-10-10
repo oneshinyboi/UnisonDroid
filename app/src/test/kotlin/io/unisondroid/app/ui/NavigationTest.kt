@@ -67,6 +67,17 @@ class NavigationTest {
         compose.onNodeWithTag(ABOUT_VERSION_TAG).assertExists()
     }
 
+    @Test
+    fun `settings action on profiles navigates to the settings screen`() {
+        compose.setContent { UnisonDroidTheme { UnisonDroidNavHost() } }
+
+        awaitTag(PROFILES_SETTINGS_ACTION_TAG)
+        compose.onNodeWithTag(PROFILES_SETTINGS_ACTION_TAG).performClick()
+
+        awaitTag(SETTINGS_TOGGLE_TAG)
+        compose.onNodeWithTag(SETTINGS_TOGGLE_TAG).assertExists()
+    }
+
     private fun awaitTag(tag: String) {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()

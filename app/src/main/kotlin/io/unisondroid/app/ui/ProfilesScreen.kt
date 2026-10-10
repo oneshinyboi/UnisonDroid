@@ -50,6 +50,7 @@ const val PROFILE_ROW_TAG = "profileRow"
 const val LAST_SYNC_TAG = "lastSync"
 const val PROFILES_KEYS_ACTION_TAG = "profiles-keys-action"
 const val PROFILES_ABOUT_ACTION_TAG = "profiles-about-action"
+const val PROFILES_SETTINGS_ACTION_TAG = "profiles-settings-action"
 const val PROFILE_EDIT_PREFIX = "profileEdit-"
 const val PROFILE_DELETE_PREFIX = "profileDelete-"
 const val DELETE_CONFIRM_TAG = "confirmDeleteProfile"
@@ -66,6 +67,7 @@ fun ProfilesScreen(
     onStartSync: (String) -> Unit,
     onOpenKeys: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -96,6 +98,7 @@ fun ProfilesScreen(
         },
         onOpenKeys = onOpenKeys,
         onOpenAbout = onOpenAbout,
+        onOpenSettings = onOpenSettings,
         modifier = modifier,
     )
 }
@@ -111,6 +114,7 @@ internal fun ProfilesContent(
     onDeleteProfile: (String) -> Unit = {},
     onOpenKeys: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<Profile?>(null) }
@@ -124,6 +128,10 @@ internal fun ProfilesContent(
                         onClick = onOpenKeys,
                         modifier = Modifier.testTag(PROFILES_KEYS_ACTION_TAG),
                     ) { Text("Keys") }
+                    TextButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.testTag(PROFILES_SETTINGS_ACTION_TAG),
+                    ) { Text("Settings") }
                     TextButton(
                         onClick = onOpenAbout,
                         modifier = Modifier.testTag(PROFILES_ABOUT_ACTION_TAG),

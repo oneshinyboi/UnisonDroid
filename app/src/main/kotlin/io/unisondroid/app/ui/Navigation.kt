@@ -14,6 +14,7 @@ object Routes {
     const val RUN = "run/{id}"
     const val KEYS = "keys"
     const val ABOUT = "about"
+    const val SETTINGS = "settings"
 
     const val EDITOR_NEW = "editor/new"
 
@@ -31,6 +32,7 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
                 onStartSync = { id -> navController.navigate(Routes.run(id)) },
                 onOpenKeys = { navController.navigate(Routes.KEYS) },
                 onOpenAbout = { navController.navigate(Routes.ABOUT) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(
@@ -57,5 +59,6 @@ fun UnisonDroidNavHost(navController: NavHostController = rememberNavController(
         }
         composable(Routes.KEYS) { KeysScreen() }
         composable(Routes.ABOUT) { AboutScreen() }
+        composable(Routes.SETTINGS) { SettingsScreen() }
     }
 }
