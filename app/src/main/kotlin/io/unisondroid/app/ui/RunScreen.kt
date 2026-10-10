@@ -29,8 +29,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -40,6 +42,7 @@ import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.service.SyncScheduler
 import io.unisondroid.app.sync.SyncState
 import io.unisondroid.app.sync.SyncVariant
+import io.unisondroid.app.sync.UnisonInfo
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -54,6 +57,7 @@ const val RUN_HOSTKEY_DIALOG_TAG = "run-hostKeyDialog"
 const val RUN_CONFLICT_ROW = "run-conflict-row"
 const val RUN_FAILED_ROW = "run-failed-row"
 const val RUN_RESOLVE_TAG = "run-resolveConflicts"
+const val RUN_RETRY_VERSION_TAG = "run-retryVersion"
 
 @Composable
 fun RunScreen(
@@ -65,10 +69,12 @@ fun RunScreen(
 ) {
     val context = LocalContext.current
     val engine = remember(context) { ServiceLocator.engine(context) }
+    val repository = remember(context) { ServiceLocator.profiles(context) }
     val scope = rememberCoroutineScope()
     val state by engine.state.collectAsState()
+    var runKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(profileId, variant, confirmed) {
+    LaunchedEffect(profileId, variant, confirmed, runKey) {
         engine.beginRun()
         SyncScheduler(context).syncNow(profileId, variant, confirmed)
     }
@@ -94,6 +100,12 @@ fun RunScreen(
         onHostKeyDecision = { approve -> scope.launch { engine.respondHostKey(approve) } },
         onGrantStorageAccess = requestStorageAccess,
         onResolveConflicts = onResolveConflicts,
+        onRetryWithVersion = { version ->
+            scope.launch {
+                repository.get(profileId)?.let { repository.save(it.copy(unisonVersion = version)) }
+                runKey++
+            }
+        },
         modifier = modifier,
     )}
 
@@ -106,6 +118,7 @@ internal fun RunContent(
     modifier: Modifier = Modifier,
     onGrantStorageAccess: () -> Unit = {},
     onResolveConflicts: () -> Unit = {},
+    onRetryWithVersion: (String) -> Unit = {},
     variant: SyncVariant = SyncVariant.TWO_WAY,
 ) {
     Scaffold(
@@ -146,6 +159,7 @@ internal fun RunContent(
                         FailureCard(
                             state = state,
                             onGrantStorageAccess = onGrantStorageAccess,
+                            onRetryWithVersion = onRetryWithVersion,
                             title = if (variant.isDiagnostic) "Connection test failed" else "Sync failed",
                         )
                     }
@@ -285,6 +299,7 @@ private fun ColumnScope.FinishedLog(log: List<String>) {
 private fun FailureCard(
     state: SyncState.Failed,
     onGrantStorageAccess: () -> Unit,
+    onRetryWithVersion: (String) -> Unit = {},
     title: String = "Sync failed",
 ) {
     Card(modifier = Modifier.fillMaxWidth().testTag(RUN_FAILURE_TAG)) {
@@ -305,6 +320,18 @@ private fun FailureCard(
                     onClick = onGrantStorageAccess,
                     modifier = Modifier.testTag(GRANT_ACCESS_TAG),
                 ) { Text(text = "Grant All Files Access") }
+            }
+            if (state.reason == SyncState.Reason.VERSION) {
+                Text(
+                    text = "The server runs a different Unison version. Try another bundled version:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                UnisonInfo.BUNDLED.forEach { bundled ->
+                    OutlinedButton(
+                        onClick = { onRetryWithVersion(bundled.version) },
+                        modifier = Modifier.testTag(RUN_RETRY_VERSION_TAG),
+                    ) { Text(text = "Try Unison ${bundled.version}") }
+                }
             }
         }
     }

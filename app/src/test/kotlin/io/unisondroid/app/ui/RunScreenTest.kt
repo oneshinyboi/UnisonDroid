@@ -13,6 +13,7 @@ import io.unisondroid.app.data.FailedRecord
 import io.unisondroid.app.data.JsonStore
 import io.unisondroid.app.data.KeyCipher
 import io.unisondroid.app.data.KeyVault
+import io.unisondroid.app.data.Profile
 import io.unisondroid.app.data.ProfileRepository
 import io.unisondroid.app.service.ServiceLocator
 import io.unisondroid.app.sync.BinaryLocator
@@ -27,6 +28,7 @@ import io.unisondroid.app.sync.SyncVariant
 import io.unisondroid.app.sync.UnisonRunner
 import io.unisondroid.app.ui.theme.UnisonDroidTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -64,6 +66,7 @@ class RunScreenTest {
     fun tearDown() {
         runCatching { WorkManager.getInstance(RuntimeEnvironment.getApplication()).cancelAllWork() }
         ServiceLocator.engineProvider = ServiceLocator.defaultEngineProvider
+        ServiceLocator.profilesProvider = ServiceLocator.defaultProfilesProvider
         ServiceLocator.reset()
     }
 
@@ -312,12 +315,12 @@ class RunScreenTest {
         engine.states.value = SyncState.Failed(
             profileId = "p1",
             reason = SyncState.Reason.BINARY_MISSING,
-            detail = "libunison.so not found in the native library directory",
+            detail = "libunison_2_54_0.so not found in the native library directory",
         )
         awaitTag(RUN_ENGINE_MISSING_TAG)
 
         compose.onNodeWithText("Unison engine missing", substring = true).assertExists()
-        compose.onNodeWithText("libunison.so not found", substring = true).assertExists()
+        compose.onNodeWithText("libunison_2_54_0.so not found", substring = true).assertExists()
     }
 
     @Test
@@ -333,6 +336,47 @@ class RunScreenTest {
 
         compose.onNodeWithTag(GRANT_ACCESS_TAG).assertExists()
         compose.onNodeWithText("Grant All Files Access").assertExists()
+    }
+
+    @Test
+    fun `version failure offers a retry per bundled version`() {
+        var retried: String? = null
+        compose.setContent {
+            UnisonDroidTheme {
+                RunContent(
+                    state = SyncState.Failed("p1", SyncState.Reason.VERSION, "different versions of Unison"),
+                    onCancel = {},
+                    onHostKeyDecision = {},
+                    onRetryWithVersion = { retried = it },
+                )
+            }
+        }
+
+        compose.onNodeWithText("Try Unison 2.53.8").performClick()
+        assertEquals("2.53.8", retried)
+    }
+
+    @Test
+    fun `retry rewrites the profile version and starts a new run`() {
+        val dir = java.nio.file.Files.createTempDirectory("run-retry-test").toFile()
+        val repo = ProfileRepository(JsonStore(dir))
+        val profile = Profile(
+            id = "p1", name = "P", localRoot = "/a", remoteRoot = "/b",
+            host = "h", user = "u", sshKeyId = "k",
+        )
+        runBlocking { repo.save(profile) }
+        ServiceLocator.profilesProvider = { repo }
+
+        compose.setContent { UnisonDroidTheme { RunScreen(profileId = "p1") } }
+        engine.states.value = SyncState.Failed("p1", SyncState.Reason.VERSION, "different versions of Unison")
+        awaitText("Try Unison 2.53.8")
+
+        compose.onNodeWithText("Try Unison 2.53.8").performClick()
+
+        compose.waitUntil(5_000) { runBlocking { repo.get("p1")?.unisonVersion } == "2.53.8" }
+        assertEquals("2.53.8", runBlocking { repo.get("p1")!!.unisonVersion })
+        compose.waitUntil(5_000) { engine.beginRunCount >= 2 }
+        assertTrue("retry must re-trigger the run", engine.beginRunCount >= 2)
     }
 
     private fun awaitTag(tag: String) {
@@ -369,6 +413,14 @@ private class FakeSyncEngine : SyncEngine(
     var cancelled = false
         private set
     val hostKeyDecisions = mutableListOf<Boolean>()
+
+    var beginRunCount = 0
+        private set
+
+    override fun beginRun() {
+        super.beginRun()
+        beginRunCount++
+    }
 
     @Volatile
     var requestedVariant: SyncVariant? = null
