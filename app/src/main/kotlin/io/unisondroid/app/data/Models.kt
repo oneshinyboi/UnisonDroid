@@ -17,6 +17,8 @@ data class Profile(
     val serverCommand: String = "unison",
     val ignorePatterns: List<String> = emptyList(),
     val advancedPrefs: String = "",
+    val autoSyncEnabled: Boolean = false,
+    val autoSyncIntervalMinutes: Int = 60,
     val lastSyncedAt: Long? = null,
     val lastResult: SyncResult? = null,
 )
