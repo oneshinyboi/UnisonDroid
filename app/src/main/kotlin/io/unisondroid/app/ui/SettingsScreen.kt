@@ -40,16 +40,16 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val loaded by produceState<AppSettings?>(initialValue = null, settingsRepository) {
         value = settingsRepository.get()
     }
-    var syncOnMobileData by remember(loaded) {
-        mutableStateOf(loaded?.syncOnMobileData ?: true)
+    var dontSyncOnMobileData by remember(loaded) {
+        mutableStateOf(!(loaded?.syncOnMobileData ?: true))
     }
 
     SettingsContent(
-        syncOnMobileData = syncOnMobileData,
+        dontSyncOnMobileData = dontSyncOnMobileData,
         onToggle = { enabled ->
-            syncOnMobileData = enabled
+            dontSyncOnMobileData = enabled
             scope.launch {
-                val updated = AppSettings(syncOnMobileData = enabled)
+                val updated = AppSettings(syncOnMobileData = !enabled)
                 settingsRepository.set(updated)
                 SyncScheduler(context).reconcile(
                     ServiceLocator.profiles(context).profiles(),
@@ -64,7 +64,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsContent(
-    syncOnMobileData: Boolean,
+    dontSyncOnMobileData: Boolean,
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -86,7 +86,7 @@ internal fun SettingsContent(
             ) {
                 Text(text = "Don't sync on mobile data")
                 Switch(
-                    checked = syncOnMobileData,
+                    checked = dontSyncOnMobileData,
                     onCheckedChange = onToggle,
                     modifier = Modifier.testTag(SETTINGS_TOGGLE_TAG),
                 )

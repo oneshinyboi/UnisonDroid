@@ -49,7 +49,8 @@ class SyncWorker(
                 Result.failure()
             }
 
-            SyncOutcome.BUSY -> Result.retry()
+            SyncOutcome.BUSY ->
+                if (mode == SyncMode.UNATTENDED) Result.retry() else Result.success()
         }
     }
 

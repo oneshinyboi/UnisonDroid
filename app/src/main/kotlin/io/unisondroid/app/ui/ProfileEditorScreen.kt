@@ -1,6 +1,7 @@
 package io.unisondroid.app.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -85,7 +86,15 @@ fun ProfileEditorScreen(
         ActivityResultContracts.StartActivityForResult(),
     ) {}
     val launchBatteryExemption: () -> Unit = {
-        batteryExemptionIntent(context)?.let { batteryLauncher.launch(it) }
+        batteryExemptionIntent(context)?.let { intent ->
+            // Some devices ship without a handler for the battery-optimization settings
+            // screen; that must not crash the editor.
+            try {
+                batteryLauncher.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                // No handler available: skip the exemption prompt.
+            }
+        }
     }
     // Continue to the battery-exemption prompt only after the notification request has
     // resolved: launching the settings activity while the runtime-permission dialog is

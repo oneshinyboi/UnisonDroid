@@ -62,12 +62,21 @@ class SyncWorkerTest {
     }
 
     @Test
-    fun `busy result returns retry`() {
+    fun `busy result returns retry for unattended work`() {
         engine.outcome = SyncOutcome.BUSY
 
         val result = runBlocking { worker("p1", SyncMode.UNATTENDED).doWork() }
 
         assertEquals(ListenableWorker.Result.retry(), result)
+    }
+
+    @Test
+    fun `busy result is a no-op for interactive work`() {
+        engine.outcome = SyncOutcome.BUSY
+
+        val result = runBlocking { worker("p1", SyncMode.INTERACTIVE).doWork() }
+
+        assertEquals(ListenableWorker.Result.success(), result)
     }
 
     @Test

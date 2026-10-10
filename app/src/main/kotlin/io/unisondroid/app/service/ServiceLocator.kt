@@ -55,7 +55,7 @@ object ServiceLocator {
         val provider = engineProvider
         val existing = cached
         if (existing != null && cachedProvider === provider) return existing
-        val created = provider(context)
+        val created = provider(context.applicationContext)
         cached = created
         cachedProvider = provider
         return created
@@ -66,7 +66,7 @@ object ServiceLocator {
         val provider = profilesProvider
         val existing = cachedProfiles
         if (existing != null && cachedProfilesProvider === provider) return existing
-        val created = provider(context)
+        val created = provider(context.applicationContext)
         cachedProfiles = created
         cachedProfilesProvider = provider
         return created
@@ -77,7 +77,7 @@ object ServiceLocator {
         val provider = keysProvider
         val existing = cachedKeys
         if (existing != null && cachedKeysProvider === provider) return existing
-        val created = provider(context)
+        val created = provider(context.applicationContext)
         cachedKeys = created
         cachedKeysProvider = provider
         return created
@@ -88,7 +88,7 @@ object ServiceLocator {
         val provider = settingsProvider
         val existing = cachedSettings
         if (existing != null && cachedSettingsProvider === provider) return existing
-        val created = provider(context)
+        val created = provider(context.applicationContext)
         cachedSettings = created
         cachedSettingsProvider = provider
         return created
